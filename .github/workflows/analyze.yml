@@ -1,9 +1,7 @@
-name: Flutter CI
+name: Flutter APK Release (Test)
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
     branches: [ main ]
 
 jobs:
@@ -17,11 +15,14 @@ jobs:
         with:
           channel: stable
 
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter build apk --release
+      - name: Install dependencies
+        run: flutter pub get
 
-      - uses: actions/upload-artifact@v4
+      - name: Build APK (release, debug-signed)
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: app-release-test
           path: build/app/outputs/flutter-apk/app-release.apk
