@@ -15,15 +15,12 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: stable
+          channel: stable
 
       - run: flutter pub get
       - run: flutter analyze
-
-      # 🔨 Build APK
       - run: flutter build apk --release
 
-      # 📦 Upload do APK
       - uses: actions/upload-artifact@v4
         with:
           name: app-release
