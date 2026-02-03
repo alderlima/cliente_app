@@ -16,7 +16,7 @@ val backgroundGeolocation = project(":flutter_background_geolocation")
 apply { from("${backgroundGeolocation.projectDir}/background_geolocation.gradle") }
 
 val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("../../environment/key.properties")
+val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
@@ -37,8 +37,6 @@ android {
 
     defaultConfig {
         applicationId = "org.traccar.client"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -46,20 +44,20 @@ android {
     }
 
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            create("release") {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-                storePassword = keystoreProperties["storePassword"] as String
-            }
+        create("release") {
+            // Tenta ler das propriedades ou de variáveis de ambiente (para o CI)
+            keyAlias = keystoreProperties["keyAlias"] as String? ?: System.getenv("SIGNING_KEY_ALIAS")
+            keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("SIGNING_KEY_PASSWORD")
+            storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("SIGNING_STORE_PASSWORD")
+            val storeFilePath = keystoreProperties["storeFile"] as String? ?: "upload-keystore.jks"
+            storeFile = file(storeFilePath)
         }
     }
+
     buildTypes {
         release {
-            if (keystorePropertiesFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
             isShrinkResources = false
         }
     }
