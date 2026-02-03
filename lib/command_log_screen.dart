@@ -37,11 +37,26 @@ class CommandLogScreen extends StatelessWidget {
               final log = logs[index];
               final timeStr = DateFormat('dd/MM HH:mm:ss').format(log.timestamp);
               
+              // Custom styling based on command content
+              Color iconColor = Colors.green;
+              IconData iconData = Icons.terminal;
+              bool isAction = log.command.startsWith('AÇÃO:');
+              bool isBlocked = log.command.contains('BLOQUEADO');
+              
+              if (isAction) {
+                iconData = isBlocked ? Icons.block : Icons.play_arrow;
+                iconColor = isBlocked ? Colors.red : Colors.blue;
+              }
+
               return ListTile(
-                leading: const Icon(Icons.terminal, color: Colors.green),
+                leading: Icon(iconData, color: iconColor),
                 title: Text(
                   log.command,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                  style: TextStyle(
+                    fontWeight: isAction ? FontWeight.bold : FontWeight.normal,
+                    color: isAction ? iconColor : null,
+                    fontFamily: 'monospace'
+                  ),
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
