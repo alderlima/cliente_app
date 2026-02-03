@@ -3,12 +3,9 @@ import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
-    // START: FlutterFire Configuration
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
-    // END: FlutterFire Configuration
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -25,13 +22,6 @@ android {
     namespace = "org.traccar.client"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
-
-    // Garante que o build não falhe se o arquivo local.properties não existir no CI
-    val localProperties = Properties()
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localProperties.load(FileInputStream(localPropertiesFile))
-    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -52,7 +42,6 @@ android {
 
     signingConfigs {
         create("release") {
-            // Tenta ler das propriedades ou de variáveis de ambiente (para o CI)
             keyAlias = keystoreProperties["keyAlias"] as String? ?: System.getenv("SIGNING_KEY_ALIAS")
             keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("SIGNING_KEY_PASSWORD")
             storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("SIGNING_STORE_PASSWORD")
