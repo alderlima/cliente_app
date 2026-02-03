@@ -1,35 +1,38 @@
-# [Traccar Client app](https://www.traccar.org/client)
+# [Aplicativo Cliente Traccar Mod]
 
-[![Get it on Google Play](http://www.tananaev.com/badges/google-play.svg)](https://play.google.com/store/apps/details?id=org.traccar.client) 
+## Visão Geral
 
-## Overview
+O Cliente Traccar Mod é um aplicativo de rastreamento GPS para Android. Ele funciona em segundo plano e envia atualizações de localização para o seu próprio servidor usando a plataforma de código aberto Traccar.
 
-Traccar Client is a GPS tracking app for Android and iOS. It runs in the background and sends location updates to your own server using the open-source Traccar platform.
+- **Rastreamento em Tempo Real**: Veja a localização do seu dispositivo em seu servidor privado em tempo real.
 
-- **Real-time Tracking**: See your device’s location on your private server in real time.
-- **Open-Source**: 100% free and open-source, with no ads or tracking.
-- **Customizable**: Configure update intervals, accuracy, and data usage to fit your needs.
-- **Privacy First**: Your location data is sent only to your chosen server—never to third parties.
-- **Easy Integration**: Designed to work seamlessly with the Traccar server and many third-party GPS tracking platforms.
+- **Código Aberto**: 100% gratuito e de código aberto, sem anúncios ou rastreamento.
 
-Just enter your server address, grant location permissions, and the app will automatically send periodic location reports in the background.
+- **Personalizável**: Configure os intervalos de atualização, a precisão e o uso de dados para atender às suas necessidades.
 
-## Team
+- **Privacidade em Primeiro Lugar**: Seus dados de localização são enviados apenas para o servidor escolhido — nunca para terceiros.
 
-- Anton Tananaev ([anton@traccar.org](mailto:anton@traccar.org))
+- **Integração Fácil**: Projetado para funcionar perfeitamente com o servidor Traccar e diversas plataformas de rastreamento GPS de terceiros.
 
-## License
+Basta inserir o endereço do seu servidor, conceder permissões de localização e o aplicativo enviará automaticamente relatórios de localização periódicos em segundo plano.
 
-    Apache License, Version 2.0
+## Licença
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
+Licença Apache, Versão 2.0
 
-        http://www.apache.org/licenses/LICENSE-2.0
+Licenciado sob a Licença Apache, Versão 2.0 (a "Licença");
 
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+você não pode usar este arquivo, exceto em conformidade com a Licença.
+
+Você pode obter uma cópia da Licença em
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+A menos que exigido pela lei aplicável ou acordado por escrito, o software
+
+distribuído sob a Licença é distribuído "COMO ESTÁ",
+
+SEM GARANTIAS OU CONDIÇÕES DE QUALQUER TIPO, expressas ou implícitas.
+
+Consulte a Licença para obter informações sobre os termos e condições específicos que regem as permissões e
+limitações do contrato.
