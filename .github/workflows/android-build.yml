@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ☕ Java (JDK 17 é o padrão para builds modernos do Android/Flutter)
+      # ☕ Java
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -22,19 +22,18 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      # 🐦 Flutter (Usando o canal stable para evitar erros de SDK do Dart)
+      # 🐦 Flutter
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      # 📦 Android SDK Tools
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      # ✅ Aceitar Licenças do Android (Resolve o problema do sdkmanager)
+      - name: Accept Android Licenses
+        run: yes | flutter doctor --android-licenses
 
-      # 🔑 Keystore de TESTE (Necessário para gerar o APK assinado)
+      # 🔑 Keystore de TESTE
       - name: Generate test keystore
         run: |
           keytool -genkeypair \
@@ -47,7 +46,7 @@ jobs:
             -keypass android \
             -dname "CN=Test,O=Test,C=BR"
 
-      # 🧾 Configuração das propriedades da chave
+      # 🧾 key.properties (Ajustado para apontar para o arquivo local)
       - name: Create key.properties
         run: |
           cat <<EOF > android/key.properties
@@ -57,9 +56,8 @@ jobs:
           storeFile=test.keystore
           EOF
 
-      # 📦 Resolução de dependências
-      # O comando 'upgrade' ajuda a resolver o conflito entre traccar_client e app_links
-      - name: Flutter pub get & upgrade
+      # 📦 Flutter deps
+      - name: Flutter pub get
         run: |
           flutter pub upgrade
           flutter pub get
@@ -68,7 +66,7 @@ jobs:
       - name: Build APK Release
         run: flutter build apk --release
 
-      # 📤 Upload do Artefato
+      # 📤 Upload APK
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
