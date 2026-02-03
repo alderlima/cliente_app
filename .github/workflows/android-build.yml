@@ -1,75 +1,28 @@
-name: Android APK Release (Test Signed)
+name: Flutter APK Release (Test)
 
 on:
   push:
-    branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ☕ Java
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: subosito/flutter-action@v2
         with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
+          channel: stable
 
-      # 🐦 Flutter
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
+      - name: Install dependencies
+        run: flutter pub get
 
-      # ✅ Aceitar Licenças do Android (Resolve o problema do sdkmanager)
-      - name: Accept Android Licenses
-        run: yes | flutter doctor --android-licenses
-
-      # 🔑 Keystore de TESTE
-      - name: Generate test keystore
-        run: |
-          keytool -genkeypair \
-            -alias testkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -keystore android/app/test.keystore \
-            -storepass android \
-            -keypass android \
-            -dname "CN=Test,O=Test,C=BR"
-
-      # 🧾 key.properties (Ajustado para apontar para o arquivo local)
-      - name: Create key.properties
-        run: |
-          cat <<EOF > android/key.properties
-          storePassword=android
-          keyPassword=android
-          keyAlias=testkey
-          storeFile=test.keystore
-          EOF
-
-      # 📦 Flutter deps
-      - name: Flutter pub get
-        run: |
-          flutter pub upgrade
-          flutter pub get
-
-      # 🔨 Build APK Release
-      - name: Build APK Release
+      - name: Build APK (release, debug-signed)
         run: flutter build apk --release
 
-      # 📤 Upload APK
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-test-signed
+          name: app-release-test
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
