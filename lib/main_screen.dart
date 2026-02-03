@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:traccar_client/main.dart';
 import 'package:traccar_client/password_service.dart';
 import 'package:traccar_client/preferences.dart';
-import 'package:traccar_client/command_log_service.dart';
 import 'package:traccar_client/command_log_screen.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
