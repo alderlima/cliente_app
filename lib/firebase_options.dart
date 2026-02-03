@@ -25,23 +25,6 @@ class DefaultFirebaseOptions {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
-      case TargetPlatform.iOS:
-        return ios;
-      case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -57,16 +40,4 @@ class DefaultFirebaseOptions {
     databaseURL: 'https://traccar-client-app.firebaseio.com',
     storageBucket: 'traccar-client-app.firebasestorage.app',
   );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBEdxpKXTvJJfYDh28OLffAk4z7S7caf08',
-    appId: '1:39016471396:ios:78cbbf5775b43308',
-    messagingSenderId: '39016471396',
-    projectId: 'traccar-client-app',
-    databaseURL: 'https://traccar-client-app.firebaseio.com',
-    storageBucket: 'traccar-client-app.firebasestorage.app',
-    iosClientId: '39016471396-7mdutolor3h210bm9qmf60gp18lmmhnm.apps.googleusercontent.com',
-    iosBundleId: 'org.traccar.client.TraccarClient',
-  );
-
 }
