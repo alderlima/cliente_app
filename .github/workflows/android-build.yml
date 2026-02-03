@@ -1,28 +1,21 @@
-name: Android Build APK (Release Signed)
+name: Android APK Release (Test Signed)
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - develop
+    branches: [ main, master, develop ]
   pull_request:
-    branches:
-      - main
-      - master
-      - develop
+    branches: [ main, master, develop ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     env:
-      ANDROID_HOME: ${{ runner.temp }}/android-sdk
       ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+      ANDROID_HOME: ${{ runner.temp }}/android-sdk
 
     steps:
-      # 📥 Checkout
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       # ☕ Java
@@ -37,30 +30,22 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.0'
+          flutter-version: 3.29.0
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      # 🤖 Android SDK cmdline-tools
+      # 📦 Android SDK cmdline-tools
       - name: Install Android SDK cmdline-tools
         run: |
           mkdir -p $ANDROID_HOME/cmdline-tools
           cd $ANDROID_HOME/cmdline-tools
-          curl -o tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip tools.zip
+          curl -s https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o tools.zip
+          unzip -q tools.zip
           mv cmdline-tools latest
 
-      # 🧩 Add Android tools to PATH
-      - name: Add Android SDK to PATH
-        run: |
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-
-      # 📜 Licenças + SDK + NDK
+      # 📦 SDK / Build-tools / Platform / NDK
       - name: Install Android SDK packages
         run: |
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses
           sdkmanager \
             "platform-tools" \
@@ -68,12 +53,7 @@ jobs:
             "build-tools;34.0.0" \
             "ndk;27.0.12077973"
 
-      # 🔧 Exportar NDK
-      - name: Export NDK path
-        run: |
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
-
-      # 🔑 Criar keystore de TESTE
+      # 🔑 Keystore de TESTE
       - name: Generate test keystore
         run: |
           keytool -genkeypair \
@@ -81,33 +61,33 @@ jobs:
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -keystore android/app/upload-keystore.jks \
-            -storepass 123456 \
-            -keypass 123456 \
+            -keystore android/app/test.keystore \
+            -storepass android \
+            -keypass android \
             -dname "CN=Test,O=Test,C=BR"
 
-      # 🧾 Criar key.properties (Kotlin DSL compatível)
+      # 🧾 key.properties
       - name: Create key.properties
         run: |
           cat <<EOF > android/key.properties
-          storePassword=123456
-          keyPassword=123456
+          storePassword=android
+          keyPassword=android
           keyAlias=testkey
-          storeFile=app/upload-keystore.jks
+          storeFile=app/test.keystore
           EOF
 
       # 📦 Dependências Flutter
       - name: Flutter pub get
         run: flutter pub get
 
-      # 🔨 Build APK RELEASE assinado
+      # 🔨 Build APK RELEASE (ASSINADO)
       - name: Build APK Release
         run: flutter build apk --release
 
-      # 📤 Upload do APK
+      # 📤 Upload APK
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-signed
+          name: app-release-test-signed
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
