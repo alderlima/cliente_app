@@ -30,19 +30,25 @@ class _MainScreenState extends State<MainScreen> {
 
   void _initState() async {
     final state = await bg.BackgroundGeolocation.state;
-    setState(() {
-      trackingEnabled = state.enabled;
-      isMoving = state.isMoving;
-    });
+    if (mounted) {
+        setState(() {
+            trackingEnabled = state.enabled;
+            isMoving = state.isMoving;
+        });
+    }
     bg.BackgroundGeolocation.onEnabledChange((bool enabled) {
-      setState(() {
-        trackingEnabled = enabled;
-      });
+      if (mounted) {
+          setState(() {
+              trackingEnabled = enabled;
+          });
+      }
     });
     bg.BackgroundGeolocation.onMotionChange((bg.Location location) {
-      setState(() {
-        isMoving = location.isMoving;
-      });
+      if (mounted) {
+          setState(() {
+              isMoving = location.isMoving;
+          });
+      }
     });
   }
 
@@ -76,6 +82,8 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildTrackingCard() {
     return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -84,12 +92,13 @@ class _MainScreenState extends State<MainScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(AppLocalizations.of(context)!.trackingTitle),
-              titleTextStyle: Theme.of(context).textTheme.headlineMedium,
+              titleTextStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(AppLocalizations.of(context)!.idLabel),
-              subtitle: Text(Preferences.instance.getString(Preferences.id) ?? ''),
+              subtitle: Text(Preferences.instance.getString(Preferences.id) ?? '', 
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -115,31 +124,47 @@ class _MainScreenState extends State<MainScreen> {
                 }
               },
             ),
-            const SizedBox(height: 8),
-            OverflowBar(
-              spacing: 8,
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const CommandLogScreen()));
+                },
+                icon: const Icon(Icons.terminal),
+                label: const Text('LOGS DE COMANDOS EM TEMPO REAL', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.green[700],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
               children: [
-                FilledButton.tonal(
-                  onPressed: () async {
-                    try {
-                      await bg.BackgroundGeolocation.getCurrentPosition(samples: 1, persist: true, extras: {'manual': true});
-                    } on PlatformException catch (error) {
-                      messengerKey.currentState?.showSnackBar(SnackBar(content: Text(error.message ?? error.code)));
-                    }
-                  },
-                  child: Text(AppLocalizations.of(context)!.locationButton),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      try {
+                        await bg.BackgroundGeolocation.getCurrentPosition(samples: 1, persist: true, extras: {'manual': true});
+                        messengerKey.currentState?.showSnackBar(const SnackBar(content: Text('Localização enviada!')));
+                      } on PlatformException catch (error) {
+                        messengerKey.currentState?.showSnackBar(SnackBar(content: Text(error.message ?? error.code)));
+                      }
+                    },
+                    icon: const Icon(Icons.my_location),
+                    label: Text(AppLocalizations.of(context)!.locationButton),
+                  ),
                 ),
-                FilledButton.tonal(
-                  onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const StatusScreen()));
-                  },
-                  child: Text(AppLocalizations.of(context)!.statusButton),
-                ),
-                FilledButton.tonal(
-                  onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CommandLogScreen()));
-                  },
-                  child: const Text('Logs de Comandos'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const StatusScreen()));
+                    },
+                    icon: const Icon(Icons.info_outline),
+                    label: Text(AppLocalizations.of(context)!.statusButton),
+                  ),
                 ),
               ],
             ),
@@ -151,6 +176,8 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildSettingsCard() {
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -159,7 +186,7 @@ class _MainScreenState extends State<MainScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(AppLocalizations.of(context)!.settingsTitle),
-              titleTextStyle: Theme.of(context).textTheme.headlineMedium,
+              titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -167,19 +194,18 @@ class _MainScreenState extends State<MainScreen> {
               subtitle: Text(Preferences.instance.getString(Preferences.url) ?? ''),
             ),
             const SizedBox(height: 8),
-            OverflowBar(
-              spacing: 8,
-              children: [
-                FilledButton.tonal(
-                  onPressed: () async {
-                    if (await PasswordService.authenticate(context) && mounted) {
-                      await Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
-                      setState(() {});
-                    }
-                  },
-                  child: Text(AppLocalizations.of(context)!.settingsButton),
-                ),
-              ],
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  if (await PasswordService.authenticate(context) && mounted) {
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                    setState(() {});
+                  }
+                },
+                icon: const Icon(Icons.settings),
+                label: Text(AppLocalizations.of(context)!.settingsButton),
+              ),
             ),
           ]
         ),
@@ -191,7 +217,9 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Traccar Client'),
+        title: const Text('Traccar Client Mod'),
+        centerTitle: true,
+        elevation: 0,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),

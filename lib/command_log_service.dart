@@ -28,7 +28,7 @@ class CommandLog {
 
 class CommandLogService {
   static const String _storageKey = 'command_logs';
-  static final _logsController = StreamController<List<CommandLog>>.broadcast();
+  static final StreamController<List<CommandLog>> _logsController = StreamController<List<CommandLog>>.broadcast();
   static List<CommandLog> _logs = [];
 
   static Stream<List<CommandLog>> get logsStream => _logsController.stream;
@@ -37,10 +37,14 @@ class CommandLogService {
     final prefs = await SharedPreferences.getInstance();
     final String? logsJson = prefs.getString(_storageKey);
     if (logsJson != null) {
-      final List<dynamic> decoded = jsonDecode(logsJson);
-      _logs = decoded.map((item) => CommandLog.fromJson(item)).toList();
+      try {
+        final List<dynamic> decoded = jsonDecode(logsJson);
+        _logs = decoded.map((item) => CommandLog.fromJson(item)).toList();
+      } catch (e) {
+        _logs = [];
+      }
     }
-    _logsController.add(_logs);
+    _logsController.add(List.from(_logs));
   }
 
   static Future<void> addLog(String command, {Map<String, dynamic>? data}) async {
@@ -49,21 +53,29 @@ class CommandLogService {
       timestamp: DateTime.now(),
       data: data,
     );
+    
     _logs.insert(0, newLog);
     if (_logs.length > 100) {
       _logs = _logs.sublist(0, 100);
     }
-    _logsController.add(_logs);
     
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey, jsonEncode(_logs.map((e) => e.toJson()).toList()));
+    // Notify listeners immediately
+    _logsController.add(List.from(_logs));
+    
+    // Persist to storage
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storageKey, jsonEncode(_logs.map((e) => e.toJson()).toList()));
+    } catch (e) {
+      // Handle potential storage errors
+    }
   }
 
-  static List<CommandLog> get currentLogs => List.unmodifiable(_logs);
+  static List<CommandLog> get currentLogs => List.from(_logs);
 
   static Future<void> clearLogs() async {
     _logs = [];
-    _logsController.add(_logs);
+    _logsController.add([]);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey);
   }

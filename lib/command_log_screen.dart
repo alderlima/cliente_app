@@ -22,22 +22,34 @@ class CommandLogScreen extends StatelessWidget {
         stream: CommandLogService.logsStream,
         initialData: CommandLogService.currentLogs,
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Erro ao carregar logs: ${snapshot.error}'));
+          }
+
           final logs = snapshot.data ?? [];
           
           if (logs.isEmpty) {
             return const Center(
-              child: Text('Nenhum comando recebido ainda.'),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.terminal, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text('Aguardando comandos em tempo real...', 
+                    style: TextStyle(color: Colors.grey, fontSize: 16)),
+                ],
+              ),
             );
           }
 
           return ListView.separated(
             itemCount: logs.length,
+            padding: const EdgeInsets.symmetric(vertical: 8),
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final log = logs[index];
               final timeStr = DateFormat('dd/MM HH:mm:ss').format(log.timestamp);
               
-              // Custom styling based on command content
               Color iconColor = Colors.green;
               IconData iconData = Icons.terminal;
               bool isAction = log.command.startsWith('AÇÃO:');
@@ -49,27 +61,41 @@ class CommandLogScreen extends StatelessWidget {
               }
 
               return ListTile(
-                leading: Icon(iconData, color: iconColor),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(iconData, color: iconColor),
+                ),
                 title: Text(
                   log.command,
                   style: TextStyle(
-                    fontWeight: isAction ? FontWeight.bold : FontWeight.normal,
-                    color: isAction ? iconColor : null,
-                    fontFamily: 'monospace'
+                    fontWeight: isAction ? FontWeight.bold : FontWeight.w600,
+                    color: isAction ? iconColor : Colors.black87,
+                    fontFamily: 'monospace',
+                    fontSize: 15,
                   ),
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(timeStr),
+                    const SizedBox(height: 4),
+                    Text(timeStr, style: const TextStyle(fontSize: 12)),
                     if (log.data != null && log.data!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                         child: Text(
                           log.data.toString(),
                           style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                            fontSize: 11,
+                            color: Colors.grey[800],
                             fontFamily: 'monospace',
                           ),
                         ),
