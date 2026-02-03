@@ -29,7 +29,21 @@ jobs:
           flutter-version: 3.29.0
           cache: true
 
-      # 📦 Android SDK + NDK 27
+      # 📦 Android cmdline-tools (SDKMANAGER)
+      - name: Install Android cmdline-tools
+        run: |
+          ANDROID_HOME=$HOME/android-sdk
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          cd $ANDROID_HOME/cmdline-tools
+          curl -s https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o tools.zip
+          unzip -q tools.zip
+          mv cmdline-tools latest
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+
+      # 📦 SDK / NDK 27
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses
@@ -62,7 +76,7 @@ jobs:
           storeFile=app/test.keystore
           EOF
 
-      # 📦 Dependências
+      # 📦 Flutter deps
       - name: Flutter pub get
         run: flutter pub get
 

@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
-      ANDROID_HOME: ${{ runner.temp }}/android-sdk
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,19 +29,9 @@ jobs:
           flutter-version: 3.29.0
           cache: true
 
-      # 📦 Android SDK cmdline-tools
-      - name: Install Android SDK cmdline-tools
-        run: |
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          cd $ANDROID_HOME/cmdline-tools
-          curl -s https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o tools.zip
-          unzip -q tools.zip
-          mv cmdline-tools latest
-
-      # 📦 SDK / Build-tools / Platform / NDK
+      # 📦 Android SDK + NDK 27
       - name: Install Android SDK packages
         run: |
-          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses
           sdkmanager \
             "platform-tools" \
@@ -76,11 +62,11 @@ jobs:
           storeFile=app/test.keystore
           EOF
 
-      # 📦 Dependências Flutter
+      # 📦 Dependências
       - name: Flutter pub get
         run: flutter pub get
 
-      # 🔨 Build APK RELEASE (ASSINADO)
+      # 🔨 Build APK RELEASE ASSINADO
       - name: Build APK Release
         run: flutter build apk --release
 
