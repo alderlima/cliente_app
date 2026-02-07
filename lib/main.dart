@@ -11,6 +11,7 @@ import 'package:traccar_client/password_service.dart';
 import 'package:traccar_client/push_service.dart';
 import 'package:traccar_client/quick_actions.dart';
 import 'package:traccar_client/command_log_service.dart';
+import 'package:traccar_client/traccar_gateway_service.dart';
 
 import 'l10n/app_localizations.dart';
 import 'main_screen.dart';
@@ -29,7 +30,27 @@ void main() async {
   await GeolocationService.init();
   await CommandLogService.init();
   await PushService.init();
+  
+  // Inicializa Gateway Traccar-Arduino na porta 5023
+  await _initGateway();
+  
   runApp(const MainApp());
+}
+
+/// Inicializa o Gateway Traccar-Arduino
+Future<void> _initGateway() async {
+  try {
+    final gatewayService = TraccarGatewayService();
+    await gatewayService.start(
+      serverPort: 5023,
+      baudRate: 9600,
+      autoConnectArduino: false, // Usuário conecta manualmente
+    );
+    developer.log('Gateway Traccar-Arduino iniciado na porta 5023');
+  } catch (e) {
+    developer.log('Erro ao iniciar Gateway: $e');
+    // Continua mesmo se o gateway falhar (pode ser porta ocupada)
+  }
 }
 
 class MainApp extends StatefulWidget {

@@ -4,6 +4,7 @@ import 'package:traccar_client/main.dart';
 import 'package:traccar_client/password_service.dart';
 import 'package:traccar_client/preferences.dart';
 import 'package:traccar_client/command_log_screen.dart';
+import 'package:traccar_client/gateway_screen.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
 
@@ -167,6 +168,25 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            // Botão do Gateway Traccar-Arduino
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const GatewayScreen()));
+                },
+                icon: const Icon(Icons.sync_alt, color: Colors.purple),
+                label: const Text(
+                  'GATEWAY TRACCAR-ARDUINO',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.purple),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
             ),
           ],
         ),
