@@ -8,7 +8,7 @@ git pull origin main
 Comando para atualizar e gerar apk:
 git status
 git add .
-git commit -m "Compilar APK 2"
+git commit -m "Correções para build no GitHub Actions"
 git push origin main
 
 

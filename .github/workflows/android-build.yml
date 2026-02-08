@@ -5,6 +5,7 @@ on:
     branches: [ main, master, develop ]
   pull_request:
     branches: [ main, master, develop ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,7 +29,14 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.24.0'
           cache: true
+
+      # 📋 Verificar versões
+      - name: Check versions
+        run: |
+          flutter --version
+          java -version
 
       # 📦 Cache Android SDK
       - name: Cache Android SDK
@@ -37,15 +45,20 @@ jobs:
           path: |
             ~/.android
             $ANDROID_HOME
-          key: android-sdk-${{ runner.os }}
+          key: android-sdk-${{ runner.os }}-${{ hashFiles('**/build.gradle.kts') }}
 
       # ✅ Licenças Android
       - name: Accept Android Licenses
-        run: yes | flutter doctor --android-licenses
+        run: yes | flutter doctor --android-licenses || true
+
+      # 🔍 Flutter Doctor
+      - name: Flutter Doctor
+        run: flutter doctor -v
 
       # 🔑 Keystore de TESTE (rápido e simples)
       - name: Generate test keystore
         run: |
+          mkdir -p android/app
           keytool -genkeypair \
             -alias testkey \
             -keyalg RSA \
@@ -66,7 +79,7 @@ jobs:
           storeFile=test.keystore
           EOF
 
-      # 📦 Dependências Flutter (cache-friendly)
+      # 📦 Dependências Flutter
       - name: Flutter pub get
         run: flutter pub get
 
@@ -75,7 +88,8 @@ jobs:
         run: |
           flutter build apk \
             --release \
-            --target-platform android-arm64
+            --target-platform android-arm64 \
+            --verbose
 
       # 📤 Upload do APK
       - name: Upload APK artifact
@@ -84,3 +98,4 @@ jobs:
           name: app-release-arm64
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+          if-no-files-found: error

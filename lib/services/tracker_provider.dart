@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,6 +53,7 @@ class TrackerProvider extends ChangeNotifier {
   ArduinoState get arduinoState => _arduinoState;
   GpsPosition? get currentPosition => _currentPosition;
   List<LogEntry> get logs => List.unmodifiable(_logs);
+  ArduinoService get arduinoService => _arduinoService;
   
   bool get isOnline => _status == TrackerStatus.online;
   bool get isConnected => _status == TrackerStatus.connected || _status == TrackerStatus.online;
