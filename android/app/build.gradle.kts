@@ -9,7 +9,6 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// 1. Carregamento seguro das propriedades da Keystore
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -32,8 +31,7 @@ android {
 
     defaultConfig {
         applicationId = "org.traccar.client"
-        // O background_geolocation exige no mínimo 21, garanta que seu flutter.minSdkVersion seja >= 21
-        minSdk = flutter.minSdkVersion
+        minSdk = 21 // background_geolocation exige 21+
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -56,10 +54,6 @@ android {
             isShrinkResources = false
         }
     }
-
-    lint {
-        disable.add("NullSafeMutableLiveData")
-    }
 }
 
 flutter {
@@ -71,8 +65,7 @@ dependencies {
     implementation("com.github.tony19:logback-android:3.0.0")
 }
 
-// 2. CORREÇÃO CRÍTICA: Aplicação do script do background_geolocation
-// Deve ser feito dentro de 'afterEvaluate' para garantir que o plugin já foi carregado pelo Flutter
+// Garante que o plugin de geolocalização seja carregado após o grafo estar pronto
 afterEvaluate {
     if (project.findProject(":flutter_background_geolocation") != null) {
         apply(from = "${project(":flutter_background_geolocation").projectDir}/background_geolocation.gradle")
