@@ -399,24 +399,24 @@ class GT06Protocol {
 
   /// Converte IMEI para BCD (8 bytes para 15 dígitos)
   Uint8List _imeiToBCD(String imei) {
-    final cleanImei = imei.replaceAll(RegExp(r'[^0-9]'), '').padLeft(15, '0');
+    final cleanImei = imei.replaceAll(RegExp(r'[^0-9]'), '');
+    
+    if (cleanImei.length != 15) {
+      throw Exception('IMEI deve ter 15 dígitos');
+    }
+    
+    // GT06 usa 16 dígitos em BCD (padding à esquerda)
+    final padded = '0$cleanImei'; // agora tem 16 dígitos
+    
     final bytes = <int>[];
     
-    for (int i = 0; i < cleanImei.length; i += 2) {
-      if (i + 1 < cleanImei.length) {
-        int high = cleanImei[i + 1].codeUnitAt(0) - 0x30;
-        int low = cleanImei[i].codeUnitAt(0) - 0x30;
-        bytes.add((high << 4) | low);
-      } else {
-        bytes.add(cleanImei[i].codeUnitAt(0) - 0x30);
-      }
+    for (int i = 0; i < padded.length; i += 2) {
+      final high = padded.codeUnitAt(i) - 0x30;     // primeiro dígito
+      final low = padded.codeUnitAt(i + 1) - 0x30;  // segundo dígito
+      bytes.add((high << 4) | low);
     }
     
-    while (bytes.length < 8) {
-      bytes.add(0);
-    }
-    
-    return Uint8List.fromList(bytes.sublist(0, 8));
+    return Uint8List.fromList(bytes); // 8 bytes certinho
   }
 
   /// Converte coordenada para formato GT06
