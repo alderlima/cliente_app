@@ -1,0 +1,21 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "traccar-client-app",
+          "appId": "1:39016471396:android:b1c7194c699bfa25",
+          "fileOutput": "android/app/google-services.json"
+        }
+      }
+    },
+    "dart": {
+      "lib/firebase_options.dart": {
+        "projectId": "traccar-client-app",
+        "configurations": {
+          "android": "1:39016471396:android:b1c7194c699bfa25"
+        }
+      }
+    }
+  }
+}
