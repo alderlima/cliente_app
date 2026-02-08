@@ -23,6 +23,7 @@
   - `id("com.google.gms.google-services") version("4.3.15") apply false`
   - `id("com.google.firebase.crashlytics") version("2.8.1") apply false`
 - **Solução:** Removido arquivo `firebase.json`
+- **Solução:** Removido arquivo `google-services.json`
 
 ### 4. Atualizada versão do Kotlin
 - **Problema:** Versão `2.1.21` era muito recente e poderia causar incompatibilidades
@@ -54,10 +55,63 @@
 ### 10. Atualizado workflow do GitHub Actions
 - **Melhorias:**
   - Adicionado `workflow_dispatch` para permitir execução manual
-  - Adicionada versão específica do Flutter (`3.24.0`)
-  - Adicionadas etapas de verificação (`flutter doctor`)
-  - Adicionado modo verbose no build
-  - Adicionada opção `if-no-files-found: error` no upload
+  - Simplificado o workflow
+  - Removido modo verbose
+  - Adicionado `flutter clean` antes do build
+
+### 11. Removido `pubspec.lock`
+- **Problema:** O arquivo tinha versões antigas de dependências travadas
+- **Solução:** Removido para regenerar com versões compatíveis
+
+### 12. Atualizadas dependências no `pubspec.yaml`
+- **Problema:** Versões antigas de dependências podiam causar incompatibilidades
+- **Solução:** Atualizadas para versões mais recentes:
+  - `geolocator: ^13.0.2`
+  - `usb_serial: ^0.5.2`
+  - `provider: ^6.1.2`
+  - `shared_preferences: ^2.5.2`
+- **Removidas dependências não usadas:**
+  - `location`
+  - `flutter_bloc`
+  - `equatable`
+  - `flutter_animate`
+  - `font_awesome_flutter`
+  - `shimmer`
+  - `intl`
+  - `google_fonts`
+  - `path_provider`
+  - `permission_handler`
+  - `device_info_plus`
+  - `logger`
+
+### 13. Atualizado `AndroidManifest.xml`
+- **Problema:** Faltavam permissões de localização para o GPS
+- **Solução:** Adicionadas permissões:
+  - `ACCESS_FINE_LOCATION`
+  - `ACCESS_COARSE_LOCATION`
+  - `ACCESS_BACKGROUND_LOCATION`
+- **Problema:** `tools:replace="android:label"` podia causar conflitos
+- **Solução:** Removido
+- **Problema:** `tools` namespace não era necessário
+- **Solução:** Removido
+
+### 14. Simplificado `MainApplication.kt`
+- **Problema:** Usava SLF4J que foi removido
+- **Solução:** Simplificado para não usar dependências externas
+
+### 15. Removidas dependências do SLF4J
+- **Problema:** Dependências não eram necessárias
+- **Solução:** Removidas do `android/app/build.gradle.kts`:
+  - `org.slf4j:slf4j-api:2.0.7`
+  - `com.github.tony19:logback-android:3.0.0`
+
+### 16. Simplificado `android/build.gradle.kts`
+- **Problema:** Variáveis extras não eram necessárias
+- **Solução:** Removidas as variáveis `appCompatVersion` e `playServicesLocationVersion`
+
+### 17. Removida versão específica do NDK
+- **Problema:** Versão específica podia causar problemas
+- **Solução:** Removida a linha `ndkVersion = "27.0.12077973"`
 
 ## Como Testar o Build
 
@@ -92,7 +146,6 @@ cliente_app/
 ├── android/
 │   ├── app/
 │   │   ├── build.gradle.kts     # Sem referências ao flutter_background_geolocation
-│   │   ├── google-services.json # Mantido (não usado sem plugins)
 │   │   └── src/...
 │   ├── build.gradle.kts
 │   └── settings.gradle.kts      # Versão Kotlin atualizada
@@ -103,6 +156,18 @@ cliente_app/
 │   ├── models/
 │   ├── screens/
 │   └── services/
-├── pubspec.yaml
+├── pubspec.yaml                 # Dependências atualizadas
 └── ...
+```
+
+## Dependências Finais
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  geolocator: ^13.0.2
+  usb_serial: ^0.5.2
+  provider: ^6.1.2
+  shared_preferences: ^2.5.2
 ```

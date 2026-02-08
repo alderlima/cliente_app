@@ -1,4 +1,4 @@
-name: Android APK Release (ARM64 Optimized)
+name: Android APK Release
 
 on:
   push:
@@ -12,51 +12,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 📥 Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ☕ Java
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
-      # 🐦 Flutter
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: '3.24.0'
           cache: true
 
-      # 📋 Verificar versões
-      - name: Check versions
-        run: |
-          flutter --version
-          java -version
+      - name: Clean Flutter
+        run: flutter clean
 
-      # 📦 Cache Android SDK
-      - name: Cache Android SDK
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.android
-            $ANDROID_HOME
-          key: android-sdk-${{ runner.os }}-${{ hashFiles('**/build.gradle.kts') }}
+      - name: Flutter pub get
+        run: flutter pub get
 
-      # ✅ Licenças Android
-      - name: Accept Android Licenses
-        run: yes | flutter doctor --android-licenses || true
-
-      # 🔍 Flutter Doctor
-      - name: Flutter Doctor
-        run: flutter doctor -v
-
-      # 🔑 Keystore de TESTE (rápido e simples)
-      - name: Generate test keystore
+      - name: Generate keystore
         run: |
           mkdir -p android/app
           keytool -genkeypair \
@@ -69,33 +46,19 @@ jobs:
             -keypass android \
             -dname "CN=Test,O=Test,C=BR"
 
-      # 🧾 key.properties
       - name: Create key.properties
         run: |
-          cat <<EOF > android/key.properties
-          storePassword=android
-          keyPassword=android
-          keyAlias=testkey
-          storeFile=test.keystore
-          EOF
+          echo "storePassword=android" > android/key.properties
+          echo "keyPassword=android" >> android/key.properties
+          echo "keyAlias=testkey" >> android/key.properties
+          echo "storeFile=test.keystore" >> android/key.properties
 
-      # 📦 Dependências Flutter
-      - name: Flutter pub get
-        run: flutter pub get
+      - name: Build APK
+        run: flutter build apk --release --target-platform android-arm64
 
-      # 🔨 Build APK ARM64
-      - name: Build APK (ARM64 only)
-        run: |
-          flutter build apk \
-            --release \
-            --target-platform android-arm64 \
-            --verbose
-
-      # 📤 Upload do APK
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release-arm64
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
-          if-no-files-found: error

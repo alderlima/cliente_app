@@ -15,25 +15,21 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "org.traccar.client"
-    // Recomendado fixar em 34 ou 35 para evitar quebras em CIs que não baixaram o SDK dinâmico
-    compileSdk = 34 
-    ndkVersion = "27.0.12077973"
+    compileSdk = flutter.compileSdkVersion
 
     compileOptions {
-        // Atualizado para VERSION_17 para alinhar com o runner do GitHub Actions
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        // Alinhado com o Java 17
-        jvmTarget = "17"
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
         applicationId = "org.traccar.client"
-        minSdk = 21 // Valor padrão seguro se o flutter.minSdkVersion falhar
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -62,10 +58,7 @@ android {
 }
 
 dependencies {
-    implementation("org.slf4j:slf4j-api:2.0.7")
-    implementation("com.github.tony19:logback-android:3.0.0")
-    // Adicionado suporte a multidex se necessário para apps Traccar
-    implementation("androidx.multidex:multidex:2.0.1")
+    // Sem dependências adicionais
 }
 
 flutter {
