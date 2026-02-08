@@ -13,7 +13,7 @@ brew install flutter
 # Linux
 sudo snap install flutter --classic
 ```
- 
+
 ### Verificar Instalação
 ```bash
 flutter doctor

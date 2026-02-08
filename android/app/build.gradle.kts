@@ -9,9 +9,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val backgroundGeolocation = project(":flutter_background_geolocation")
-apply { from("${backgroundGeolocation.projectDir}/background_geolocation.gradle") }
-
+// 1. Carregamento seguro das propriedades da Keystore
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -24,16 +22,17 @@ android {
     ndkVersion = "27.0.12077973"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        jvmTarget = "17"
     }
 
     defaultConfig {
         applicationId = "org.traccar.client"
+        // O background_geolocation exige no mínimo 21, garanta que seu flutter.minSdkVersion seja >= 21
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -63,11 +62,19 @@ android {
     }
 }
 
+flutter {
+    source = "../.."
+}
+
 dependencies {
     implementation("org.slf4j:slf4j-api:2.0.7")
     implementation("com.github.tony19:logback-android:3.0.0")
 }
 
-flutter {
-    source = "../.."
+// 2. CORREÇÃO CRÍTICA: Aplicação do script do background_geolocation
+// Deve ser feito dentro de 'afterEvaluate' para garantir que o plugin já foi carregado pelo Flutter
+afterEvaluate {
+    if (project.findProject(":flutter_background_geolocation") != null) {
+        apply(from = "${project(":flutter_background_geolocation").projectDir}/background_geolocation.gradle")
+    }
 }

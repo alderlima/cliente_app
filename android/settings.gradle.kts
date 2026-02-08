@@ -20,10 +20,9 @@ pluginManagement {
 }
 
 plugins {
+    // ESSENCIAL: Carrega automaticamente os plugins do pubspec.yaml (incluindo o background_geolocation)
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.7.0" apply false
-    id("com.google.gms.google-services") version("4.3.15") apply false
-    id("com.google.firebase.crashlytics") version("2.8.1") apply false
     id("org.jetbrains.kotlin.android") version "2.1.21" apply false
 }
 
