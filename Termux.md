@@ -9,7 +9,7 @@ Comando para atualizar e gerar apk:
 git status
 git add .
 git commit -m "Compilar APK 2"
-git push origin master
+git push origin main
 
 
 assinar apk
