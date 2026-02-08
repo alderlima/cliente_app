@@ -532,7 +532,7 @@ class GT06ClientService {
     } catch (e) {
       _log('✗ Erro ao enviar pacote: $e');
       _handleDisconnection('Erro ao enviar: $e');
-      throw;
+      rethrow;
     }
   }
 
