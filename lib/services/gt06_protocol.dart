@@ -9,8 +9,9 @@ import 'dart:convert';
 /// Documentação baseada nas especificações oficiais
 ///
 /// ESTRUTURA DO PACOTE:
-/// [Start Bytes: 0x78 0x78] [Length: 1 byte] [Protocol: 1 byte] 
-/// [Content: n bytes] [Serial: 2 bytes] [Checksum: 1 byte] [Stop: 0x0D 0x0A]
+/// [Start: 0x78 0x78] [Length: 1] [Protocol: 1] [Info: n] [Serial: 2] [CRC: 1] [Stop: 0x0D 0x0A]
+///
+/// Length = tamanho de (Protocol + Info + Serial)
 /// ============================================================================
 
 class GT06Protocol {
@@ -318,10 +319,15 @@ class GT06Protocol {
   /// ==========================================================================
 
   /// Parse de pacote recebido do servidor
+  /// 
+  /// Estrutura: [0x78 0x78] [Len] [Protocol] [Info] [Serial:2] [CRC] [0x0D 0x0A]
   GT06ServerPacket? parseServerPacket(Uint8List data) {
     try {
-      // Verifica tamanho mínimo
-      if (data.length < 7) return null;
+      // Verifica tamanho mínimo (start + len + protocol + serial + crc + stop = 2+1+1+2+1+2 = 9)
+      if (data.length < 9) {
+        print('[GT06_PROTOCOL] Pacote muito curto: ${data.length} bytes');
+        return null;
+      }
       
       // Procura start bytes
       int startIndex = -1;
@@ -332,63 +338,129 @@ class GT06Protocol {
         }
       }
       
-      if (startIndex == -1 || startIndex + 2 >= data.length) return null;
+      if (startIndex == -1) {
+        print('[GT06_PROTOCOL] Start bytes não encontrados');
+        return null;
+      }
       
-      // Pega content length
+      if (startIndex + 2 >= data.length) {
+        print('[GT06_PROTOCOL] Dados insuficientes após start bytes');
+        return null;
+      }
+      
+      // Pega content length (byte após start bytes)
       int contentLength = data[startIndex + 2];
-      int packetLength = 2 + 1 + contentLength + 1 + 2; // start + len byte + content + checksum + stop
       
-      if (startIndex + packetLength > data.length) return null;
+      // Calcula tamanho total do pacote
+      // start(2) + len(1) + content(contentLength) + crc(1) + stop(2)
+      int packetLength = 2 + 1 + contentLength + 1 + 2;
       
-      // Extrai o pacote
+      print('[GT06_PROTOCOL] Start: $startIndex, ContentLen: $contentLength, PacketLen: $packetLength, DataLen: ${data.length}');
+      
+      if (startIndex + packetLength > data.length) {
+        print('[GT06_PROTOCOL] Pacote incompleto');
+        return null;
+      }
+      
+      // Extrai o pacote completo
       final packet = data.sublist(startIndex, startIndex + packetLength);
       
       // Verifica stop bytes
       if (packet[packet.length - 2] != STOP_BYTES[0] || 
           packet[packet.length - 1] != STOP_BYTES[1]) {
+        print('[GT06_PROTOCOL] Stop bytes inválidos: ${bytesToHex(packet.sublist(packet.length - 2))}');
         return null;
       }
       
       // Extrai campos
-      int protocolNumber = packet[3];
-      Uint8List content = packet.sublist(4, 4 + contentLength - 1);
-      int serialNumber = (packet[packet.length - 4] << 8) | packet[packet.length - 3];
+      // Byte 0-1: Start bytes
+      // Byte 2: Content length
+      // Byte 3: Protocol number
+      // Bytes 4 até (4 + contentLength - 3): Info (exclui serial de 2 bytes no final do content)
+      // Bytes (3 + contentLength - 1) até (3 + contentLength): Serial number (2 bytes)
+      // Byte (3 + contentLength): Checksum
+      // Últimos 2 bytes: Stop bytes
       
-      // Verifica checksum
+      int protocolNumber = packet[3];
+      
+      // Info = content sem o protocol (1 byte) e sem o serial (2 bytes)
+      int infoLength = contentLength - 3; // -1 protocol -2 serial
+      Uint8List info;
+      if (infoLength > 0) {
+        info = packet.sublist(4, 4 + infoLength);
+      } else {
+        info = Uint8List(0);
+      }
+      
+      // Serial number está nos últimos 2 bytes do content (antes do CRC)
+      int serialIndex = 3 + contentLength - 1; // índice do primeiro byte do serial
+      int serialNumber = (packet[serialIndex] << 8) | packet[serialIndex + 1];
+      
+      // Verifica checksum (XOR de tudo entre len e serial, inclusive)
       int expectedChecksum = packet[packet.length - 3];
-      Uint8List contentForChecksum = packet.sublist(2, packet.length - 3);
+      Uint8List contentForChecksum = packet.sublist(2, packet.length - 3); // do len até o final do serial
       int calculatedChecksum = _calculateChecksum(contentForChecksum);
+      
+      bool checksumValid = expectedChecksum == calculatedChecksum;
+      
+      print('[GT06_PROTOCOL] Protocol: 0x${protocolNumber.toRadixString(16).padLeft(2, "0")}, '
+            'Serial: $serialNumber, Checksum: $checksumValid (expected: $expectedChecksum, calc: $calculatedChecksum)');
       
       return GT06ServerPacket(
         protocolNumber: protocolNumber,
-        content: content,
+        content: info,
         serialNumber: serialNumber,
-        checksumValid: expectedChecksum == calculatedChecksum,
+        checksumValid: checksumValid,
         rawData: packet,
       );
       
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('[GT06_PROTOCOL] Erro no parse: $e');
+      print('[GT06_PROTOCOL] Stack: $stackTrace');
       return null;
     }
   }
 
   /// Parse de comando do servidor (0x80)
+  /// 
+  /// Estrutura do comando no pacote 0x80:
+  /// [Flag: 1] [CommandType: 1] [CommandLength: 2] [CommandData: n]
   String? parseCommand(GT06ServerPacket packet) {
-    if (packet.protocolNumber != PROTOCOL_COMMAND) return null;
+    if (packet.protocolNumber != PROTOCOL_COMMAND) {
+      print('[GT06_PROTOCOL] Não é pacote de comando (protocol: 0x${packet.protocolNumber.toRadixString(16)})');
+      return null;
+    }
     
     try {
-      // Estrutura: [Flag][Type][LenHi][LenLo][Command...]
-      if (packet.content.length < 4) return null;
+      print('[GT06_PROTOCOL] Parse comando - content length: ${packet.content.length}');
+      print('[GT06_PROTOCOL] Content hex: ${bytesToHex(packet.content)}');
       
+      // Estrutura: [Flag][Type][LenHi][LenLo][Command...]
+      if (packet.content.length < 4) {
+        print('[GT06_PROTOCOL] Content muito curto para comando');
+        return null;
+      }
+      
+      int flag = packet.content[0];
       int commandType = packet.content[1];
       int commandLength = (packet.content[2] << 8) | packet.content[3];
       
-      if (packet.content.length < 4 + commandLength) return null;
+      print('[GT06_PROTOCOL] Flag: $flag, Type: $commandType, CmdLen: $commandLength');
+      
+      if (packet.content.length < 4 + commandLength) {
+        print('[GT06_PROTOCOL] Content menor que comando esperado');
+        return null;
+      }
       
       Uint8List commandBytes = packet.content.sublist(4, 4 + commandLength);
-      return utf8.decode(commandBytes);
+      String command = utf8.decode(commandBytes);
       
-    } catch (e) {
+      print('[GT06_PROTOCOL] Comando parseado: "$command"');
+      return command;
+      
+    } catch (e, stackTrace) {
+      print('[GT06_PROTOCOL] Erro no parse de comando: $e');
+      print('[GT06_PROTOCOL] Stack: $stackTrace');
       return null;
     }
   }
@@ -484,7 +556,7 @@ class GT06Protocol {
 /// Pacote recebido do servidor
 class GT06ServerPacket {
   final int protocolNumber;
-  final Uint8List content;
+  final Uint8List content;  // Info bytes (sem protocol e sem serial)
   final int serialNumber;
   final bool checksumValid;
   final Uint8List rawData;

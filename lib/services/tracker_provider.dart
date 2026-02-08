@@ -70,7 +70,6 @@ class TrackerProvider extends ChangeNotifier {
                           _status == TrackerStatus.online;
   
   bool get isArduinoConnected => _arduinoState.status == ArduinoStatus.connected;
-  
   String get statusText {
     switch (_status) {
       case TrackerStatus.disconnected: return 'Desconectado';
@@ -121,27 +120,43 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   TrackerProvider() {
+    print('[TRACKER_PROVIDER] Inicializando...');
     _init();
   }
 
   Future<void> _init() async {
+    print('[TRACKER_PROVIDER] _init()');
     await _loadConfig();
     _setupListeners();
     
     // Gera IMEI se não tiver
     if (_config.imei.isEmpty) {
+      print('[TRACKER_PROVIDER] Gerando IMEI inicial');
       generateNewIMEI();
     }
     
     notifyListeners();
+    print('[TRACKER_PROVIDER] Inicialização completa');
   }
 
   void _setupListeners() {
+    print('[TRACKER_PROVIDER] Configurando listeners...');
+    
     // Eventos do cliente GT06
-    _clientEventSub = _gt06Client.eventStream.listen(_onClientEvent);
+    _clientEventSub = _gt06Client.eventStream.listen(
+      _onClientEvent,
+      onError: (e) => print('[TRACKER_PROVIDER] Erro no eventStream: $e'),
+      onDone: () => print('[TRACKER_PROVIDER] eventStream encerrado'),
+    );
+    print('[TRACKER_PROVIDER] Listener de eventos configurado');
     
     // Comandos do servidor
-    _clientCommandSub = _gt06Client.commandStream.listen(_onServerCommand);
+    _clientCommandSub = _gt06Client.commandStream.listen(
+      _onServerCommand,
+      onError: (e) => print('[TRACKER_PROVIDER] Erro no commandStream: $e'),
+      onDone: () => print('[TRACKER_PROVIDER] commandStream encerrado'),
+    );
+    print('[TRACKER_PROVIDER] Listener de comandos configurado');
     
     // Posições GPS
     _gpsPositionSub = _gpsService.positionStream.listen(_onGpsPosition);
@@ -168,6 +183,7 @@ class TrackerProvider extends ChangeNotifier {
             jsonDecode(json) as Map,
           ),
         );
+        print('[TRACKER_PROVIDER] Config carregada: IMEI=${_config.imei}');
       }
     } catch (e) {
       _addLog(LogType.error, 'Erro ao carregar configuração', e.toString());
@@ -215,32 +231,41 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   Future<void> connect() async {
+    print('[TRACKER_PROVIDER] connect() chamado');
+    print('[TRACKER_PROVIDER] Status atual: $_status');
+    
     // Evita múltiplas conexões simultâneas
     if (_status == TrackerStatus.connecting || 
         _status == TrackerStatus.loggingIn ||
         _status == TrackerStatus.online) {
+      print('[TRACKER_PROVIDER] Já está conectado ou conectando, ignorando');
       _addLog(LogType.warning, 'Já está conectado ou conectando');
       return;
     }
     
     if (_config.serverAddress.isEmpty) {
+      print('[TRACKER_PROVIDER] Servidor não configurado');
       _addLog(LogType.error, 'Configure o servidor antes de conectar');
       return;
     }
     
     if (_config.imei.isEmpty || _config.imei.length != 15) {
+      print('[TRACKER_PROVIDER] IMEI inválido: ${_config.imei}');
       _addLog(LogType.error, 'IMEI inválido. Deve ter 15 dígitos.');
       return;
     }
     
+    print('[TRACKER_PROVIDER] Atualizando status para CONNECTING');
     _updateStatus(TrackerStatus.connecting);
     
     // Inicia GPS
+    print('[TRACKER_PROVIDER] Iniciando GPS...');
     await _gpsService.startTracking(
       intervalSeconds: _config.locationInterval,
     );
     
     // Conecta ao servidor
+    print('[TRACKER_PROVIDER] Conectando ao servidor GT06...');
     await _gt06Client.connect(
       serverAddress: _config.serverAddress,
       serverPort: _config.serverPort,
@@ -250,6 +275,7 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    print('[TRACKER_PROVIDER] disconnect() chamado');
     _stopLocationTimer();
     await _gpsService.stopTracking();
     await _gt06Client.disconnect();
@@ -263,32 +289,42 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   void _onClientEvent(ClientEvent event) {
+    print('[TRACKER_PROVIDER] Evento recebido: ${event.type} - ${event.message}');
+    
     switch (event.type) {
       case ClientEventType.connecting:
+        print('[TRACKER_PROVIDER] >>> Estado: CONNECTING <<<');
         _updateStatus(TrackerStatus.connecting);
         break;
         
       case ClientEventType.connected:
+        print('[TRACKER_PROVIDER] >>> Estado: CONNECTED <<<');
         _updateStatus(TrackerStatus.connected);
         _stats.connectedSince = DateTime.now();
         break;
         
       case ClientEventType.loggingIn:
+        print('[TRACKER_PROVIDER] >>> Estado: LOGGING_IN <<<');
         _updateStatus(TrackerStatus.loggingIn);
         break;
         
       case ClientEventType.loggedIn:
+        print('[TRACKER_PROVIDER] >>> Estado: ONLINE <<<');
+        print('[TRACKER_PROVIDER] ==========================================');
+        print('[TRACKER_PROVIDER] = LOGIN ACEITO! DISPOSITIVO ONLINE!      =');
+        print('[TRACKER_PROVIDER] ==========================================');
         _updateStatus(TrackerStatus.online);
-        // O heartbeat agora é iniciado automaticamente no GT06Client após login
         _startLocationTimer();
         break;
         
       case ClientEventType.disconnected:
+        print('[TRACKER_PROVIDER] >>> Estado: DISCONNECTED <<<');
         _updateStatus(TrackerStatus.disconnected);
         _stopLocationTimer();
         break;
         
       case ClientEventType.error:
+        print('[TRACKER_PROVIDER] >>> Estado: ERROR <<<');
         _updateStatus(TrackerStatus.error);
         _addLog(LogType.error, event.message);
         break;
@@ -314,6 +350,7 @@ class TrackerProvider extends ChangeNotifier {
         break;
         
       case ClientEventType.commandReceived:
+        print('[TRACKER_PROVIDER] >>> Comando recebido no evento! <<<');
         _stats.commandsReceived++;
         _addLog(LogType.command, event.message, event.data?['command']);
         break;
@@ -331,14 +368,33 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   void _onServerCommand(String command) {
-    _addLog(LogType.command, 'Comando Traccar recebido: $command');
+    print('[TRACKER_PROVIDER] ==========================================');
+    print('[TRACKER_PROVIDER] >>> COMANDO DO SERVIDOR RECEBIDO <<<');
+    print('[TRACKER_PROVIDER] Comando: "$command"');
+    print('[TRACKER_PROVIDER] Arduino conectado: ${_arduinoService.isConnected}');
+    print('[TRACKER_PROVIDER] ==========================================');
+    
+    _addLog(LogType.command, 'Comando Traccar: $command');
     
     // Envia para Arduino se estiver conectado
     if (_arduinoService.isConnected) {
       final arduinoCmd = _arduinoService.convertTraccarCommand(command);
-      _addLog(LogType.arduino, 'Convertido para Arduino: $arduinoCmd');
-      _arduinoService.sendCommand(arduinoCmd);
+      print('[TRACKER_PROVIDER] Convertido para Arduino: "$arduinoCmd"');
+      _addLog(LogType.arduino, 'Convertido: $arduinoCmd');
+      
+      print('[TRACKER_PROVIDER] Enviando para Arduino...');
+      _arduinoService.sendCommand(arduinoCmd).then((success) {
+        if (success) {
+          print('[TRACKER_PROVIDER] >>> Comando enviado ao Arduino com sucesso! <<<');
+          _addLog(LogType.success, 'Enviado ao Arduino: $arduinoCmd');
+        } else {
+          print('[TRACKER_PROVIDER] >>> FALHA ao enviar comando ao Arduino <<<');
+          _addLog(LogType.error, 'Falha ao enviar ao Arduino');
+        }
+      });
     } else {
+      print('[TRACKER_PROVIDER] >>> ARDUINO NÃO CONECTADO! <<<');
+      print('[TRACKER_PROVIDER] Comando não foi enviado ao Arduino');
       _addLog(LogType.warning, 'Arduino não conectado - comando não enviado');
     }
   }
@@ -362,6 +418,7 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   void _startLocationTimer() {
+    print('[TRACKER_PROVIDER] Iniciando timer de localização');
     _stopLocationTimer();
     
     // Envia posição imediatamente
@@ -375,6 +432,7 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   void _stopLocationTimer() {
+    print('[TRACKER_PROVIDER] Parando timer de localização');
     _locationTimer?.cancel();
     _locationTimer = null;
   }
@@ -400,22 +458,32 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   Future<void> connectArduino() async {
+    print('[TRACKER_PROVIDER] Conectando Arduino...');
     final connected = await _arduinoService.autoConnect();
     
     if (connected) {
+      print('[TRACKER_PROVIDER] Arduino conectado com sucesso');
       _addLog(LogType.arduino, 'Arduino conectado');
     } else {
+      print('[TRACKER_PROVIDER] Falha ao conectar Arduino');
       _addLog(LogType.warning, 'Falha ao conectar Arduino');
     }
   }
 
   Future<void> disconnectArduino() async {
+    print('[TRACKER_PROVIDER] Desconectando Arduino...');
     await _arduinoService.disconnect();
     _addLog(LogType.arduino, 'Arduino desconectado');
   }
 
   Future<void> sendToArduino(String command) async {
-    await _arduinoService.sendCommand(command);
+    print('[TRACKER_PROVIDER] Enviando comando manual ao Arduino: $command');
+    final success = await _arduinoService.sendCommand(command);
+    if (success) {
+      _addLog(LogType.arduino, 'Comando manual enviado: $command');
+    } else {
+      _addLog(LogType.error, 'Falha ao enviar comando manual');
+    }
   }
 
   void _onArduinoMessage(ArduinoMessage message) {
@@ -441,6 +509,7 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   void _onArduinoState(ArduinoState state) {
+    print('[TRACKER_PROVIDER] Estado do Arduino mudou: ${state.status}');
     _arduinoState = state;
     notifyListeners();
   }
@@ -477,6 +546,7 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   void _updateStatus(TrackerStatus status) {
+    print('[TRACKER_PROVIDER] _updateStatus: $_status -> $status');
     _status = status;
     notifyListeners();
   }
@@ -497,6 +567,7 @@ class TrackerProvider extends ChangeNotifier {
   /// Libera recursos
   @override
   void dispose() {
+    print('[TRACKER_PROVIDER] Dispose');
     _clientEventSub?.cancel();
     _clientCommandSub?.cancel();
     _gpsPositionSub?.cancel();

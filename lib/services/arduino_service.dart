@@ -65,7 +65,13 @@ class ArduinoService {
   /// Lista dispositivos USB disponíveis
   Future<List<UsbDevice>> listDevices() async {
     try {
-      return await UsbSerial.listDevices();
+      print('[ARDUINO_SERVICE] Listando dispositivos USB...');
+      final devices = await UsbSerial.listDevices();
+      print('[ARDUINO_SERVICE] ${devices.length} dispositivo(s) encontrado(s)');
+      for (var d in devices) {
+        print('[ARDUINO_SERVICE]   - ${d.productName} (${d.manufacturerName})');
+      }
+      return devices;
     } catch (e) {
       _notifyMessage('Erro ao listar dispositivos: $e', ArduinoMessageType.error);
       return [];
@@ -78,7 +84,10 @@ class ArduinoService {
 
   /// Conecta a um dispositivo específico
   Future<bool> connect(UsbDevice device, {int baudRate = 9600}) async {
+    print('[ARDUINO_SERVICE] Conectando a ${device.productName} @ $baudRate bps');
+    
     if (_state.status == ArduinoStatus.connected) {
+      print('[ARDUINO_SERVICE] Já conectado, desconectando primeiro...');
       await disconnect();
     }
     
@@ -86,6 +95,7 @@ class ArduinoService {
     
     try {
       // Abre porta
+      print('[ARDUINO_SERVICE] Criando porta...');
       _port = await device.create();
       if (_port == null) {
         _updateState(status: ArduinoStatus.error);
@@ -94,6 +104,7 @@ class ArduinoService {
       }
       
       // Abre conexão
+      print('[ARDUINO_SERVICE] Abrindo porta...');
       bool openResult = await _port!.open();
       if (!openResult) {
         _updateState(status: ArduinoStatus.error);
@@ -102,6 +113,7 @@ class ArduinoService {
       }
       
       // Configura porta
+      print('[ARDUINO_SERVICE] Configurando porta...');
       await _port!.setDTR(true);
       await _port!.setRTS(true);
       await _port!.setPortParameters(
@@ -112,6 +124,7 @@ class ArduinoService {
       );
       
       // Configura listener de mensagens
+      print('[ARDUINO_SERVICE] Configurando listener...');
       _setupMessageListener();
       
       _updateState(
@@ -125,9 +138,11 @@ class ArduinoService {
         ArduinoMessageType.info,
       );
       
+      print('[ARDUINO_SERVICE] >>> CONECTADO COM SUCESSO! <<<');
       return true;
       
     } catch (e) {
+      print('[ARDUINO_SERVICE] Erro ao conectar: $e');
       _updateState(status: ArduinoStatus.error);
       _notifyMessage('Erro ao conectar: $e', ArduinoMessageType.error);
       return false;
@@ -136,6 +151,7 @@ class ArduinoService {
 
   /// Conecta automaticamente ao primeiro Arduino disponível
   Future<bool> autoConnect({int baudRate = 9600}) async {
+    print('[ARDUINO_SERVICE] AutoConnect iniciado');
     final devices = await listDevices();
     
     if (devices.isEmpty) {
@@ -148,22 +164,28 @@ class ArduinoService {
       final name = (device.productName ?? '').toLowerCase();
       final manufacturer = (device.manufacturerName ?? '').toLowerCase();
       
+      print('[ARDUINO_SERVICE] Verificando: $name ($manufacturer)');
+      
       if (name.contains('arduino') || 
           name.contains('ch340') || 
           name.contains('ftdi') ||
           name.contains('cp210') ||
           name.contains('usb-serial') ||
+          name.contains('serial') ||
           manufacturer.contains('arduino')) {
+        print('[ARDUINO_SERVICE] Dispositivo Arduino encontrado!');
         return await connect(device, baudRate: baudRate);
       }
     }
     
     // Se não encontrou Arduino específico, tenta o primeiro
+    print('[ARDUINO_SERVICE] Arduino específico não encontrado, tentando primeiro dispositivo');
     return await connect(devices.first, baudRate: baudRate);
   }
 
   /// Desconecta do Arduino
   Future<void> disconnect() async {
+    print('[ARDUINO_SERVICE] Desconectando...');
     await _transactionSubscription?.cancel();
     _transactionSubscription = null;
     _transaction = null;
@@ -181,13 +203,19 @@ class ArduinoService {
     _messagesReceived = 0;
     _updateState(status: ArduinoStatus.disconnected);
     _notifyMessage('Desconectado do Arduino', ArduinoMessageType.info);
+    print('[ARDUINO_SERVICE] Desconectado');
   }
 
   /// Configura listener de mensagens
   void _setupMessageListener() {
-    if (_port == null) return;
+    if (_port == null) {
+      print('[ARDUINO_SERVICE] Porta nula, não pode configurar listener');
+      return;
+    }
     
     try {
+      print('[ARDUINO_SERVICE] Configurando transação de strings...');
+      
       // Cria a transação para ler strings terminadas em LF (\n)
       _transaction = Transaction.stringTerminated(
         _port!.inputStream!,
@@ -197,17 +225,23 @@ class ArduinoService {
       // Escuta mensagens recebidas
       _transactionSubscription = _transaction!.stream.listen(
         (String line) {
+          print('[ARDUINO_SERVICE] Dados recebidos: "$line"');
           _onMessageReceived(line);
         },
         onError: (error) {
+          print('[ARDUINO_SERVICE] Erro na transação: $error');
           _notifyMessage('Erro na comunicação: $error', ArduinoMessageType.error);
         },
         onDone: () {
+          print('[ARDUINO_SERVICE] Transação encerrada');
           _notifyMessage('Conexão encerrada', ArduinoMessageType.info);
           _updateState(status: ArduinoStatus.disconnected);
         },
       );
+      
+      print('[ARDUINO_SERVICE] Listener configurado com sucesso');
     } catch (e) {
+      print('[ARDUINO_SERVICE] Erro ao configurar listener: $e');
       _notifyMessage('Erro ao configurar listener: $e', ArduinoMessageType.error);
     }
   }
@@ -222,12 +256,27 @@ class ArduinoService {
   /// O comando é enviado com \n ao final para compatibilidade com
   /// Serial.readStringUntil('\n') no Arduino
   Future<bool> sendCommand(String command) async {
-    if (_port == null || _state.status != ArduinoStatus.connected) {
-      _notifyMessage('Arduino não conectado', ArduinoMessageType.warning);
+    print('[ARDUINO_SERVICE] ==========================================');
+    print('[ARDUINO_SERVICE] >>> sendCommand() chamado <<<');
+    print('[ARDUINO_SERVICE] Comando: "$command"');
+    print('[ARDUINO_SERVICE] Porta: ${_port != null ? "OK" : "NULL"}');
+    print('[ARDUINO_SERVICE] Status: ${_state.status}');
+    print('[ARDUINO_SERVICE] ==========================================');
+    
+    if (_port == null) {
+      print('[ARDUINO_SERVICE] ERRO: Porta é nula!');
+      _notifyMessage('Arduino não conectado (porta nula)', ArduinoMessageType.warning);
+      return false;
+    }
+    
+    if (_state.status != ArduinoStatus.connected) {
+      print('[ARDUINO_SERVICE] ERRO: Status não é connected!');
+      _notifyMessage('Arduino não conectado (status: ${_state.status})', ArduinoMessageType.warning);
       return false;
     }
     
     if (command.isEmpty) {
+      print('[ARDUINO_SERVICE] ERRO: Comando vazio!');
       _notifyMessage('Comando vazio - não enviado', ArduinoMessageType.warning);
       return false;
     }
@@ -239,17 +288,28 @@ class ArduinoService {
         message += '\n';
       }
       
+      print('[ARDUINO_SERVICE] Enviando: ${message.length} bytes');
+      print('[ARDUINO_SERVICE] Hex: ${message.codeUnits.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+      
       final data = Uint8List.fromList(utf8.encode(message));
-      await _port!.write(data);
+      final bytesWritten = await _port!.write(data);
       
-      _commandsSent++;
-      _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
+      print('[ARDUINO_SERVICE] Bytes escritos: $bytesWritten');
       
-      _updateState(lastMessage: command, lastMessageTime: DateTime.now());
-      
-      return true;
+      if (bytesWritten > 0) {
+        _commandsSent++;
+        _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
+        _updateState(lastMessage: command, lastMessageTime: DateTime.now());
+        print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
+        return true;
+      } else {
+        print('[ARDUINO_SERVICE] ERRO: Nenhum byte escrito!');
+        _notifyMessage('Falha ao escrever na porta', ArduinoMessageType.error);
+        return false;
+      }
       
     } catch (e) {
+      print('[ARDUINO_SERVICE] ERRO ao enviar: $e');
       _notifyMessage('Erro ao enviar: $e', ArduinoMessageType.error);
       return false;
     }
@@ -294,6 +354,7 @@ class ArduinoService {
   /// ==========================================================================
 
   void _notifyMessage(String message, ArduinoMessageType type) {
+    print('[ARDUINO_SERVICE] Notify: [$type] $message');
     _messageController.add(ArduinoMessage(
       message: message,
       type: type,
@@ -333,6 +394,8 @@ class ArduinoService {
   /// 
   /// Outros comandos são passados como: CMD:COMANDO_ORIGINAL
   String convertTraccarCommand(String traccarCommand) {
+    print('[ARDUINO_SERVICE] Convertendo comando: "$traccarCommand"');
+    
     final upper = traccarCommand.toUpperCase().trim();
     
     // Comandos de bloqueio/desbloqueio de motor
@@ -341,6 +404,7 @@ class ArduinoService {
         upper.contains('BLOQUEAR') ||
         upper.contains('BLOCK') ||
         upper.contains('KILL')) {
+      print('[ARDUINO_SERVICE] Convertido: CMD:BLOQUEAR');
       return 'CMD:BLOQUEAR';
     } 
     else if (upper.contains('RESUME') || 
@@ -348,6 +412,7 @@ class ArduinoService {
              upper.contains('DESBLOQUEAR') ||
              upper.contains('UNBLOCK') ||
              upper.contains('START')) {
+      print('[ARDUINO_SERVICE] Convertido: CMD:DESBLOQUEAR');
       return 'CMD:DESBLOQUEAR';
     } 
     // Comandos de localização
@@ -356,6 +421,7 @@ class ArduinoService {
              upper.contains('POSICAO') ||
              upper.contains('POSITION') ||
              upper.contains('GPS')) {
+      print('[ARDUINO_SERVICE] Convertido: CMD:POSICAO');
       return 'CMD:POSICAO';
     } 
     // Comandos de reinicialização
@@ -363,26 +429,31 @@ class ArduinoService {
              upper.contains('REINICIAR') ||
              upper.contains('REBOOT') ||
              upper.contains('RESTART')) {
+      print('[ARDUINO_SERVICE] Convertido: CMD:REINICIAR');
       return 'CMD:REINICIAR';
     } 
     // Comandos de status
     else if (upper.contains('STATUS') || 
              upper.contains('ESTADO') ||
              upper.contains('INFO')) {
+      print('[ARDUINO_SERVICE] Convertido: CMD:STATUS');
       return 'CMD:STATUS';
     }
     // Comandos de configuração
     else if (upper.contains('INTERVAL') || 
              upper.contains('INTERVALO')) {
+      print('[ARDUINO_SERVICE] Convertido: CMD:INTERVALO');
       return 'CMD:INTERVALO';
     }
     
     // Se não reconheceu, passa o comando original
+    print('[ARDUINO_SERVICE] Convertido: CMD:$traccarCommand');
     return 'CMD:$traccarCommand';
   }
 
   /// Libera recursos
   void dispose() {
+    print('[ARDUINO_SERVICE] Dispose');
     disconnect();
     _messageController.close();
     _stateController.close();

@@ -13,10 +13,10 @@ import 'gt06_protocol.dart';
 /// FLUXO:
 /// 1. Conectar ao servidor
 /// 2. Enviar LOGIN (0x01)
-/// 3. Aguardar LOGIN_ACK
+/// 3. Aguardar LOGIN_ACK (0x01)
 /// 4. Iniciar heartbeat periódico
 /// 5. Enviar posições GPS
-/// 6. Receber e responder comandos
+/// 6. Receber e responder comandos (0x80)
 /// ============================================================================
 
 class GT06Client {
@@ -79,6 +79,7 @@ class GT06Client {
     _protocol.resetSerial();
     
     _notifyEvent(ClientEventType.connecting, 'Conectando a $serverAddress:$serverPort...');
+    print('[GT06_CLIENT] Iniciando conexão para $serverAddress:$serverPort');
     
     try {
       // Cria conexão TCP
@@ -89,6 +90,7 @@ class GT06Client {
       );
       
       _isConnected = true;
+      print('[GT06_CLIENT] Socket conectado com sucesso');
       _notifyEvent(ClientEventType.connected, 'Conectado a $serverAddress:$serverPort');
       
       // Configura listeners
@@ -99,6 +101,7 @@ class GT06Client {
       
     } catch (e) {
       _isConnected = false;
+      print('[GT06_CLIENT] Erro ao conectar: $e');
       _notifyEvent(ClientEventType.error, 'Erro ao conectar: $e');
       _scheduleReconnect(heartbeatInterval);
     }
@@ -107,6 +110,8 @@ class GT06Client {
   /// Configura listeners do socket
   void _setupSocketListeners() {
     if (_socket == null) return;
+    
+    print('[GT06_CLIENT] Configurando listeners do socket');
     
     _socket!.listen(
       _onDataReceived,
@@ -118,6 +123,7 @@ class GT06Client {
 
   /// Desconecta do servidor
   Future<void> disconnect() async {
+    print('[GT06_CLIENT] Desconectando...');
     _stopTimers();
     
     if (_socket != null) {
@@ -134,6 +140,7 @@ class GT06Client {
     _receiveBuffer.clear();
     
     _notifyEvent(ClientEventType.disconnected, 'Desconectado do servidor');
+    print('[GT06_CLIENT] Desconectado');
   }
 
   /// ==========================================================================
@@ -145,6 +152,7 @@ class GT06Client {
     if (!_isConnected) return;
     
     final packet = _protocol.createLoginPacket(_imei);
+    print('[GT06_CLIENT] Enviando LOGIN: ${GT06Protocol.bytesToHex(packet)}');
     await _sendPacket(packet, 'LOGIN');
     
     _notifyEvent(ClientEventType.loggingIn, 'Enviando login com IMEI: $_imei');
@@ -238,6 +246,9 @@ class GT06Client {
 
   /// Manipula dados recebidos
   void _onDataReceived(Uint8List data) {
+    print('[GT06_CLIENT] Dados recebidos: ${data.length} bytes');
+    print('[GT06_CLIENT] Hex: ${GT06Protocol.bytesToHex(data)}');
+    
     _receiveBuffer.addAll(data);
     _rawDataController.add(data);
     
@@ -252,7 +263,9 @@ class GT06Client {
 
   /// Processa buffer de recepção
   void _processReceiveBuffer() {
-    while (_receiveBuffer.length >= 7) {
+    print('[GT06_CLIENT] Processando buffer: ${_receiveBuffer.length} bytes');
+    
+    while (_receiveBuffer.length >= 9) {  // Mínimo: start(2) + len(1) + protocol(1) + serial(2) + crc(1) + stop(2) = 9
       // Procura start bytes
       int startIndex = -1;
       for (int i = 0; i < _receiveBuffer.length - 1; i++) {
@@ -264,25 +277,37 @@ class GT06Client {
       }
       
       if (startIndex == -1) {
+        print('[GT06_CLIENT] Start bytes não encontrados, limpando buffer');
         _receiveBuffer.clear();
         return;
       }
       
       // Remove lixo antes do start
       if (startIndex > 0) {
+        print('[GT06_CLIENT] Removendo $startIndex bytes de lixo antes do start');
         _receiveBuffer.removeRange(0, startIndex);
       }
       
-      if (_receiveBuffer.length < 3) return;
+      if (_receiveBuffer.length < 3) {
+        print('[GT06_CLIENT] Buffer muito curto após limpeza');
+        return;
+      }
       
       int contentLength = _receiveBuffer[2];
-      int packetLength = 2 + 1 + contentLength + 1 + 2;
+      int packetLength = 2 + 1 + contentLength + 1 + 2; // start + len + content + crc + stop
       
-      if (_receiveBuffer.length < packetLength) return;
+      print('[GT06_CLIENT] Content length: $contentLength, Packet length: $packetLength, Buffer: ${_receiveBuffer.length}');
+      
+      if (_receiveBuffer.length < packetLength) {
+        print('[GT06_CLIENT] Pacote incompleto, aguardando mais dados');
+        return;
+      }
       
       // Extrai pacote
       final packet = Uint8List.fromList(_receiveBuffer.sublist(0, packetLength));
       _receiveBuffer.removeRange(0, packetLength);
+      
+      print('[GT06_CLIENT] Pacote extraído: ${GT06Protocol.bytesToHex(packet)}');
       
       // Processa pacote
       _processPacket(packet);
@@ -291,12 +316,17 @@ class GT06Client {
 
   /// Processa pacote recebido
   void _processPacket(Uint8List packet) {
+    print('[GT06_CLIENT] Processando pacote...');
     final parsed = _protocol.parseServerPacket(packet);
     
     if (parsed == null) {
+      print('[GT06_CLIENT] Pacote inválido ou não parseado');
       _notifyEvent(ClientEventType.warning, 'Pacote inválido recebido');
       return;
     }
+    
+    print('[GT06_CLIENT] Pacote parseado: ${parsed.protocolName} (0x${parsed.protocolNumber.toRadixString(16)})');
+    print('[GT06_CLIENT] Serial: ${parsed.serialNumber}, Checksum válido: ${parsed.checksumValid}');
     
     _notifyEvent(
       ClientEventType.packetReceived,
@@ -310,6 +340,7 @@ class GT06Client {
     
     switch (parsed.protocolNumber) {
       case GT06Protocol.PROTOCOL_LOGIN:
+        print('[GT06_CLIENT] >>> LOGIN_ACK recebido! <<<');
         _handleLoginAck(parsed);
         break;
         
@@ -322,54 +353,73 @@ class GT06Client {
         break;
         
       case GT06Protocol.PROTOCOL_COMMAND:
+        print('[GT06_CLIENT] >>> COMANDO (0x80) recebido! <<<');
         _handleCommand(parsed);
         break;
         
       case GT06Protocol.PROTOCOL_COMMAND_RESPONSE:
         _handleCommandAck(parsed);
         break;
+        
+      default:
+        print('[GT06_CLIENT] Protocolo desconhecido: 0x${parsed.protocolNumber.toRadixString(16)}');
     }
   }
 
   /// Manipula ACK de login
   void _handleLoginAck(GT06ServerPacket packet) {
+    print('[GT06_CLIENT] >>> Processando LOGIN_ACK <<<');
     _isLoggedIn = true;
     _notifyEvent(ClientEventType.loggedIn, 'Login aceito pelo servidor!');
+    print('[GT06_CLIENT] Estado: _isLoggedIn = true');
     
     // Inicia heartbeat automático após login bem-sucedido
+    print('[GT06_CLIENT] Iniciando heartbeat automático (${_heartbeatInterval}s)');
     startHeartbeat(_heartbeatInterval);
   }
 
   /// Manipula ACK de heartbeat
   void _handleHeartbeatAck(GT06ServerPacket packet) {
+    print('[GT06_CLIENT] HEARTBEAT_ACK recebido');
     _notifyEvent(ClientEventType.heartbeatAck, 'Heartbeat confirmado');
   }
 
   /// Manipula ACK de location
   void _handleLocationAck(GT06ServerPacket packet) {
+    print('[GT06_CLIENT] LOCATION_ACK recebido');
     _notifyEvent(ClientEventType.locationAck, 'Posição confirmada');
   }
 
   /// Manipula comando do servidor
   void _handleCommand(GT06ServerPacket packet) {
+    print('[GT06_CLIENT] >>> Processando COMANDO (0x80) <<<');
     final command = _protocol.parseCommand(packet);
     
+    print('[GT06_CLIENT] Comando extraído: ${command ?? "(null)"}');
+    
     if (command != null && command.isNotEmpty) {
+      print('[GT06_CLIENT] >>> Enviando comando para stream: "$command" <<<');
       _notifyEvent(
         ClientEventType.commandReceived,
         'Comando recebido: $command',
         data: {'command': command},
       );
       
+      // Adiciona ao stream de comandos
       _commandController.add(command);
+      print('[GT06_CLIENT] Comando adicionado ao commandStream');
       
       // Envia ACK
+      print('[GT06_CLIENT] Enviando resposta de comando');
       sendCommandResponse('CMD OK');
+    } else {
+      print('[GT06_CLIENT] Comando vazio ou nulo, ignorando');
     }
   }
 
   /// Manipula ACK de comando
   void _handleCommandAck(GT06ServerPacket packet) {
+    print('[GT06_CLIENT] CMD_ACK recebido');
     _notifyEvent(ClientEventType.commandAck, 'Resposta de comando confirmada');
   }
 
@@ -378,11 +428,13 @@ class GT06Client {
   /// ==========================================================================
 
   void _onSocketError(error) {
+    print('[GT06_CLIENT] Erro de socket: $error');
     _notifyEvent(ClientEventType.error, 'Erro de socket: $error');
     _handleDisconnection();
   }
 
   void _onSocketClosed() {
+    print('[GT06_CLIENT] Socket fechado pelo servidor');
     _notifyEvent(ClientEventType.disconnected, 'Conexão fechada pelo servidor');
     _handleDisconnection();
   }
@@ -390,6 +442,7 @@ class GT06Client {
   void _handleDisconnection() {
     if (!_isConnected) return;
     
+    print('[GT06_CLIENT] Processando desconexão');
     _isConnected = false;
     _isLoggedIn = false;
     _stopTimers();
@@ -403,18 +456,24 @@ class GT06Client {
 
   /// Inicia heartbeat periódico
   void startHeartbeat(int intervalSeconds) {
+    print('[GT06_CLIENT] Configurando timer de heartbeat: ${intervalSeconds}s');
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(
       Duration(seconds: intervalSeconds),
-      (_) => sendHeartbeat(),
+      (_) {
+        print('[GT06_CLIENT] Timer: enviando heartbeat');
+        sendHeartbeat();
+      },
     );
     
     // Envia heartbeat imediatamente também
+    print('[GT06_CLIENT] Enviando heartbeat inicial');
     sendHeartbeat();
   }
 
   /// Para timers
   void _stopTimers() {
+    print('[GT06_CLIENT] Parando timers');
     _heartbeatTimer?.cancel();
     _reconnectTimer?.cancel();
     _heartbeatTimer = null;
@@ -423,9 +482,11 @@ class GT06Client {
 
   /// Agenda reconexão
   void _scheduleReconnect(int delaySeconds) {
+    print('[GT06_CLIENT] Agendando reconexão em ${delaySeconds}s');
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
       if (!_isConnected) {
+        print('[GT06_CLIENT] Tentando reconectar...');
         connect(
           serverAddress: _serverAddress,
           serverPort: _serverPort,
@@ -441,6 +502,7 @@ class GT06Client {
   /// ==========================================================================
 
   void _notifyEvent(ClientEventType type, String message, {Map<String, dynamic>? data}) {
+    print('[GT06_CLIENT] Evento: $type - $message');
     _eventController.add(ClientEvent(
       type: type,
       message: message,
@@ -451,6 +513,7 @@ class GT06Client {
 
   /// Libera recursos
   void dispose() {
+    print('[GT06_CLIENT] Dispose');
     disconnect();
     _eventController.close();
     _commandController.close();
