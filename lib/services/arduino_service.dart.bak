@@ -167,27 +167,19 @@ class ArduinoService {
   void _setupMessageListener() {
     if (_port == null) return;
     
-    // 1. Cria a transação primeiro
-    _transaction = Transaction.stringTerminated(
+    // Usa Transaction para ler linhas completas
+    _transactionSubscription = Transaction.stringTerminated(
       _port!.inputStream!,
       Uint8List.fromList([0x0A]),  // LF
-    );
-
-    // 2. Chama o .listen() na propriedade .stream da transação
-    _transactionSubscription = _transaction!.stream.listen(
+    ).listen(
       (String line) {
         _onMessageReceived(line);
       },
       onError: (error) {
         _notifyMessage('Erro na comunicação: $error', ArduinoMessageType.error);
       },
-      onDone: () {
-        // Opcional: tratar quando a conexão fecha
-        _notifyMessage('Conexão encerrada', ArduinoMessageType.info);
-      },
     );
   }
-
 
   /// ==========================================================================
   /// ENVIO DE MENSAGENS
