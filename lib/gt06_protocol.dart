@@ -54,13 +54,29 @@ class GT06Protocol {
     'PARAMETROS': [0x50, 0x41, 0x52, 0x41, 0x4D], // "PARAM"
   };
 
-  /// Calcula o checksum do pacote GT06
+  /// Calcula o checksum do pacote GT06 (XOR de todos os bytes)
   static int calculateChecksum(Uint8List data) {
     int checksum = 0;
     for (int byte in data) {
       checksum ^= byte;
     }
     return checksum;
+  }
+
+  /// Calcula CRC16-CCITT (X25) - usado em algumas variantes do protocolo
+  static int calculateCRC16(Uint8List data) {
+    int crc = 0xFFFF;
+    for (int byte in data) {
+      crc ^= byte;
+      for (int i = 0; i < 8; i++) {
+        if ((crc & 0x0001) != 0) {
+          crc = (crc >> 1) ^ 0x8408;
+        } else {
+          crc >>= 1;
+        }
+      }
+    }
+    return crc ^ 0xFFFF;
   }
 
   /// Verifica se os dados são um pacote GT06 válido

@@ -5,6 +5,7 @@ import 'package:traccar_client/password_service.dart';
 import 'package:traccar_client/preferences.dart';
 import 'package:traccar_client/command_log_screen.dart';
 import 'package:traccar_client/gateway_screen.dart';
+import 'package:traccar_client/gt06_client_screen.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
 
@@ -184,6 +185,25 @@ class _MainScreenState extends State<MainScreen> {
                 ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.purple),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Botão do Cliente GT06
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const GT06ClientScreen()));
+                },
+                icon: const Icon(Icons.gps_fixed, color: Colors.teal),
+                label: const Text(
+                  'CLIENTE GT06 (RASTREADOR)',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.teal),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
