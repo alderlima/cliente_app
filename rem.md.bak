@@ -1,11 +1,23 @@
+
+android/gradle/wrapper:
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.10.2-all.zip
+
+android/build.gradle:
 allprojects {
+    ext {
+        set("appCompatVersion", "1.7.0")
+        set("playServicesLocationVersion", "21.3.0")
+    }
     repositories {
         google()
         mavenCentral()
     }
 }
 
-// Configuração de diretório de build compatível com Flutter 3.24+
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
@@ -13,7 +25,6 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-
 subprojects {
     project.evaluationDependsOn(":app")
 }
@@ -21,3 +32,7 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+android/app/build.gradle:
+
+
