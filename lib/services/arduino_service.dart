@@ -18,7 +18,10 @@ class ArduinoService {
   UsbPort? _port;
   
   // Stream subscriptions
+  //StreamSubscription<String>? _transactionSubscription;
+  // Stream subscriptions
   StreamSubscription<String>? _transactionSubscription;
+  Transaction<String>? _transaction;
   
   // Stream controllers
   final StreamController<ArduinoMessage> _messageController = StreamController<ArduinoMessage>.broadcast();

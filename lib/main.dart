@@ -35,12 +35,12 @@ class RastreadorApp extends StatelessWidget {
         title: 'Rastreador GT06',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF00BCD4),
             brightness: Brightness.dark,
           ),
-          cardTheme: CardTheme( 
+          useMaterial3: true,
+          cardTheme: CardThemeData(
             elevation: 8,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
