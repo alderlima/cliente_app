@@ -1,118 +1,58 @@
-import 'dart:async';
-import 'dart:developer' as developer;
-
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
-import 'package:app_links/app_links.dart';
-import 'package:rate_my_app/rate_my_app.dart';
-import 'package:traccar_client/geolocation_service.dart';
-import 'package:traccar_client/password_service.dart';
-import 'package:traccar_client/push_service.dart';
-import 'package:traccar_client/quick_actions.dart';
-import 'package:traccar_client/command_log_service.dart';
-import 'package:traccar_client/traccar_gateway_service.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'services/tracker_provider.dart';
+import 'screens/main_screen.dart';
 
-import 'l10n/app_localizations.dart';
-import 'main_screen.dart';
-import 'preferences.dart';
-import 'configuration_service.dart';
-
-final messengerKey = GlobalKey<ScaffoldMessengerState>();
-
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
-  await Preferences.init();
-  await Preferences.migrate();
-  await PasswordService.migrate();
-  await GeolocationService.init();
-  await CommandLogService.init();
-  await PushService.init();
   
-  // Inicializa Gateway Traccar-Arduino na porta 5023
-  await _initGateway();
+  // Configura orientação portrait
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   
-  runApp(const MainApp());
+  // Configura cor da barra de status
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
+  
+  runApp(const RastreadorApp());
 }
 
-/// Inicializa o Gateway Traccar-Arduino
-Future<void> _initGateway() async {
-  try {
-    final gatewayService = TraccarGatewayService();
-    await gatewayService.start(
-      serverPort: 5023,
-      baudRate: 9600,
-      autoConnectArduino: false, // Usuário conecta manualmente
-    );
-    developer.log('Gateway Traccar-Arduino iniciado na porta 5023');
-  } catch (e) {
-    developer.log('Erro ao iniciar Gateway: $e');
-    // Continua mesmo se o gateway falhar (pode ser porta ocupada)
-  }
-}
-
-class MainApp extends StatefulWidget {
-  const MainApp({super.key});
-
-  @override
-  State<MainApp> createState() => _MainAppState();
-}
-
-class _MainAppState extends State<MainApp> {
-  RateMyApp rateMyApp = RateMyApp(minDays: 0, minLaunches: 0);
-
-  @override
-  void initState() {
-    super.initState();
-    _initLinks();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await rateMyApp.init();
-      if (mounted && rateMyApp.shouldOpenDialog) {
-        try {
-          await rateMyApp.showRateDialog(context);
-        } catch (error) {
-          developer.log('Failed to show rate dialog', error: error);
-        }
-      }
-    });
-  }
-
-  Future<void> _initLinks() async {
-    final appLinks = AppLinks();
-    final uri = await appLinks.getInitialLink();
-    if (uri != null) {
-      await ConfigurationService.applyUri(uri);
-    }
-    appLinks.uriLinkStream.listen((uri) async {
-      await ConfigurationService.applyUri(uri);
-    });
-  }
+class RastreadorApp extends StatelessWidget {
+  const RastreadorApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      scaffoldMessengerKey: messengerKey,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.green,
-          brightness: Brightness.light,
+    return ChangeNotifierProvider(
+      create: (_) => TrackerProvider(),
+      child: MaterialApp(
+        title: 'Rastreador GT06',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF00BCD4),
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+          cardTheme: CardTheme(
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          appBarTheme: const AppBarTheme(
+            centerTitle: true,
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+          ),
         ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.green,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: Stack(
-        children: const [
-          QuickActionsInitializer(),
-          MainScreen(),
-        ],
+        home: const MainScreen(),
       ),
     );
   }
