@@ -11,7 +11,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Adicionado para resolver o erro de gen_localizations no build
   flutter_localizations:
     sdk: flutter
   
@@ -35,7 +34,8 @@ dependencies:
   
   # Utilidades
   shared_preferences: ^2.2.2
-  intl: ^0.19.0
+  # CORREÇÃO: Atualizado para 0.20.2 conforme exigido pelo Flutter SDK 3.38
+  intl: ^0.20.2
   path_provider: ^2.1.1
   permission_handler: ^11.1.0
   device_info_plus: ^9.1.2
@@ -50,8 +50,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # CORREÇÃO: Necessário para gerar códigos de tradução/localização automaticamente
   generate: true
   
   assets:
-    - assets/ # Ajustado para incluir a pasta toda (garanta que a pasta exista)
+    - assets/
