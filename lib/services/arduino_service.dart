@@ -11,14 +11,21 @@ import '../models/tracker_state.dart';
 /// 
 /// Gerencia a comunicação com Arduino via cabo USB-OTG.
 /// Envia comandos recebidos do Traccar para o Arduino.
+/// 
+/// FLUXO DE COMANDOS TRACCAR -> ARDUINO:
+/// 1. Traccar envia comando (pacote 0x80)
+/// 2. GT06Client recebe e parseia o comando
+/// 3. TrackerProvider recebe via commandStream
+/// 4. TrackerProvider chama _onServerCommand
+/// 5. _onServerCommand converte o comando via convertTraccarCommand
+/// 6. Comando convertido é enviado para Arduino via sendCommand
+/// 7. Comando é enviado com \n ao final
 /// ============================================================================
 
 class ArduinoService {
   // Porta serial
   UsbPort? _port;
   
-  // Stream subscriptions
-  //StreamSubscription<String>? _transactionSubscription;
   // Stream subscriptions
   StreamSubscription<String>? _transactionSubscription;
   Transaction<String>? _transaction;
@@ -29,6 +36,10 @@ class ArduinoService {
   
   // Estado
   ArduinoState _state = ArduinoState();
+  
+  // Contadores de estatísticas
+  int _commandsSent = 0;
+  int _messagesReceived = 0;
   
   // Baud rates disponíveis
   static const List<int> availableBaudRates = [
@@ -42,6 +53,8 @@ class ArduinoService {
   // Getters
   ArduinoState get state => _state;
   bool get isConnected => _state.status == ArduinoStatus.connected;
+  int get commandsSent => _commandsSent;
+  int get messagesReceived => _messagesReceived;
   Stream<ArduinoMessage> get messageStream => _messageController.stream;
   Stream<ArduinoState> get stateStream => _stateController.stream;
 
@@ -139,6 +152,7 @@ class ArduinoService {
           name.contains('ch340') || 
           name.contains('ftdi') ||
           name.contains('cp210') ||
+          name.contains('usb-serial') ||
           manufacturer.contains('arduino')) {
         return await connect(device, baudRate: baudRate);
       }
@@ -152,6 +166,7 @@ class ArduinoService {
   Future<void> disconnect() async {
     await _transactionSubscription?.cancel();
     _transactionSubscription = null;
+    _transaction = null;
     
     if (_port != null) {
       try {
@@ -162,6 +177,8 @@ class ArduinoService {
       _port = null;
     }
     
+    _commandsSent = 0;
+    _messagesReceived = 0;
     _updateState(status: ArduinoStatus.disconnected);
     _notifyMessage('Desconectado do Arduino', ArduinoMessageType.info);
   }
@@ -170,25 +187,29 @@ class ArduinoService {
   void _setupMessageListener() {
     if (_port == null) return;
     
-    // 1. Cria a transação primeiro
-    _transaction = Transaction.stringTerminated(
-      _port!.inputStream!,
-      Uint8List.fromList([0x0A]),  // LF
-    );
+    try {
+      // Cria a transação para ler strings terminadas em LF (\n)
+      _transaction = Transaction.stringTerminated(
+        _port!.inputStream!,
+        Uint8List.fromList([0x0A]),  // LF - Line Feed (\n)
+      );
 
-    // 2. Chama o .listen() na propriedade .stream da transação
-    _transactionSubscription = _transaction!.stream.listen(
-      (String line) {
-        _onMessageReceived(line);
-      },
-      onError: (error) {
-        _notifyMessage('Erro na comunicação: $error', ArduinoMessageType.error);
-      },
-      onDone: () {
-        // Opcional: tratar quando a conexão fecha
-        _notifyMessage('Conexão encerrada', ArduinoMessageType.info);
-      },
-    );
+      // Escuta mensagens recebidas
+      _transactionSubscription = _transaction!.stream.listen(
+        (String line) {
+          _onMessageReceived(line);
+        },
+        onError: (error) {
+          _notifyMessage('Erro na comunicação: $error', ArduinoMessageType.error);
+        },
+        onDone: () {
+          _notifyMessage('Conexão encerrada', ArduinoMessageType.info);
+          _updateState(status: ArduinoStatus.disconnected);
+        },
+      );
+    } catch (e) {
+      _notifyMessage('Erro ao configurar listener: $e', ArduinoMessageType.error);
+    }
   }
 
 
@@ -197,9 +218,17 @@ class ArduinoService {
   /// ==========================================================================
 
   /// Envia comando para o Arduino
+  /// 
+  /// O comando é enviado com \n ao final para compatibilidade com
+  /// Serial.readStringUntil('\n') no Arduino
   Future<bool> sendCommand(String command) async {
     if (_port == null || _state.status != ArduinoStatus.connected) {
       _notifyMessage('Arduino não conectado', ArduinoMessageType.warning);
+      return false;
+    }
+    
+    if (command.isEmpty) {
+      _notifyMessage('Comando vazio - não enviado', ArduinoMessageType.warning);
       return false;
     }
     
@@ -213,6 +242,7 @@ class ArduinoService {
       final data = Uint8List.fromList(utf8.encode(message));
       await _port!.write(data);
       
+      _commandsSent++;
       _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
       
       _updateState(lastMessage: command, lastMessageTime: DateTime.now());
@@ -226,6 +256,10 @@ class ArduinoService {
   }
 
   /// Envia comando formatado para o Arduino
+  /// 
+  /// Formato: CMD:TIPO:DATA
+  /// Exemplo: CMD:BLOQUEAR
+  /// Exemplo: CMD:POSICAO
   Future<bool> sendFormattedCommand(String commandType, {String? data}) async {
     final buffer = StringBuffer();
     buffer.write('CMD:');
@@ -244,11 +278,12 @@ class ArduinoService {
   /// ==========================================================================
 
   void _onMessageReceived(String message) {
-    // Remove caracteres de controle
+    // Remove caracteres de controle (\r, \n)
     final cleanMessage = message.replaceAll(RegExp(r'[\r\n]'), '').trim();
     
     if (cleanMessage.isEmpty) return;
     
+    _messagesReceived++;
     _notifyMessage('Recebido: $cleanMessage', ArduinoMessageType.received);
     
     _updateState(lastMessage: cleanMessage, lastMessageTime: DateTime.now());
@@ -288,21 +323,61 @@ class ArduinoService {
   /// ==========================================================================
 
   /// Converte comando Traccar para comando Arduino
+  /// 
+  /// Comandos Traccar comuns:
+  /// - "stop" -> CMD:BLOQUEAR (bloqueia motor)
+  /// - "resume" -> CMD:DESBLOQUEAR (libera motor)
+  /// - "where" -> CMD:POSICAO (solicita posição)
+  /// - "reset" -> CMD:REINICIAR (reinicia rastreador)
+  /// - "status" -> CMD:STATUS (solicita status)
+  /// 
+  /// Outros comandos são passados como: CMD:COMANDO_ORIGINAL
   String convertTraccarCommand(String traccarCommand) {
-    final upper = traccarCommand.toUpperCase();
+    final upper = traccarCommand.toUpperCase().trim();
     
-    if (upper.contains('STOP') || upper.contains('CUT') || upper.contains('BLOQUEAR')) {
+    // Comandos de bloqueio/desbloqueio de motor
+    if (upper.contains('STOP') || 
+        upper.contains('CUT') || 
+        upper.contains('BLOQUEAR') ||
+        upper.contains('BLOCK') ||
+        upper.contains('KILL')) {
       return 'CMD:BLOQUEAR';
-    } else if (upper.contains('RESUME') || upper.contains('RESTORE') || upper.contains('DESBLOQUEAR')) {
+    } 
+    else if (upper.contains('RESUME') || 
+             upper.contains('RESTORE') || 
+             upper.contains('DESBLOQUEAR') ||
+             upper.contains('UNBLOCK') ||
+             upper.contains('START')) {
       return 'CMD:DESBLOQUEAR';
-    } else if (upper.contains('WHERE') || upper.contains('LOCATE') || upper.contains('POSICAO')) {
+    } 
+    // Comandos de localização
+    else if (upper.contains('WHERE') || 
+             upper.contains('LOCATE') || 
+             upper.contains('POSICAO') ||
+             upper.contains('POSITION') ||
+             upper.contains('GPS')) {
       return 'CMD:POSICAO';
-    } else if (upper.contains('RESET') || upper.contains('REINICIAR')) {
+    } 
+    // Comandos de reinicialização
+    else if (upper.contains('RESET') || 
+             upper.contains('REINICIAR') ||
+             upper.contains('REBOOT') ||
+             upper.contains('RESTART')) {
       return 'CMD:REINICIAR';
-    } else if (upper.contains('STATUS')) {
+    } 
+    // Comandos de status
+    else if (upper.contains('STATUS') || 
+             upper.contains('ESTADO') ||
+             upper.contains('INFO')) {
       return 'CMD:STATUS';
     }
+    // Comandos de configuração
+    else if (upper.contains('INTERVAL') || 
+             upper.contains('INTERVALO')) {
+      return 'CMD:INTERVALO';
+    }
     
+    // Se não reconheceu, passa o comando original
     return 'CMD:$traccarCommand';
   }
 

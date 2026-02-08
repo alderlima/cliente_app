@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'gt06_client.dart';
@@ -55,9 +56,21 @@ class TrackerProvider extends ChangeNotifier {
   List<LogEntry> get logs => List.unmodifiable(_logs);
   ArduinoService get arduinoService => _arduinoService;
   
+  /// Verifica se está online (conectado e autenticado)
   bool get isOnline => _status == TrackerStatus.online;
-  bool get isConnected => _status == TrackerStatus.connected || _status == TrackerStatus.online;
+  
+  /// Verifica se está em qualquer estado de conexão (para o botão)
+  bool get isConnecting => _status == TrackerStatus.connecting || 
+                           _status == TrackerStatus.connected || 
+                           _status == TrackerStatus.loggingIn;
+  
+  /// Verifica se está conectado (socket aberto)
+  bool get isConnected => _status == TrackerStatus.connected || 
+                          _status == TrackerStatus.loggingIn || 
+                          _status == TrackerStatus.online;
+  
   bool get isArduinoConnected => _arduinoState.status == ArduinoStatus.connected;
+  
   String get statusText {
     switch (_status) {
       case TrackerStatus.disconnected: return 'Desconectado';
@@ -66,6 +79,40 @@ class TrackerProvider extends ChangeNotifier {
       case TrackerStatus.loggingIn: return 'Autenticando...';
       case TrackerStatus.online: return 'ONLINE';
       case TrackerStatus.error: return 'Erro';
+    }
+  }
+  
+  /// Retorna a cor do status para a UI
+  Color get statusColor {
+    switch (_status) {
+      case TrackerStatus.online:
+        return Colors.green;
+      case TrackerStatus.connecting:
+      case TrackerStatus.loggingIn:
+        return Colors.orange;
+      case TrackerStatus.connected:
+        return Colors.blue;
+      case TrackerStatus.error:
+        return Colors.red;
+      case TrackerStatus.disconnected:
+        return Colors.grey;
+    }
+  }
+  
+  /// Retorna o ícone do status para a UI
+  IconData get statusIcon {
+    switch (_status) {
+      case TrackerStatus.online:
+        return Icons.check_circle;
+      case TrackerStatus.connecting:
+      case TrackerStatus.loggingIn:
+        return Icons.sync;
+      case TrackerStatus.connected:
+        return Icons.cloud_done;
+      case TrackerStatus.error:
+        return Icons.error;
+      case TrackerStatus.disconnected:
+        return Icons.cloud_off;
     }
   }
 
@@ -168,7 +215,11 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   Future<void> connect() async {
-    if (_status == TrackerStatus.connecting || _status == TrackerStatus.online) {
+    // Evita múltiplas conexões simultâneas
+    if (_status == TrackerStatus.connecting || 
+        _status == TrackerStatus.loggingIn ||
+        _status == TrackerStatus.online) {
+      _addLog(LogType.warning, 'Já está conectado ou conectando');
       return;
     }
     
@@ -228,7 +279,7 @@ class TrackerProvider extends ChangeNotifier {
         
       case ClientEventType.loggedIn:
         _updateStatus(TrackerStatus.online);
-        _gt06Client.startHeartbeat(_config.heartbeatInterval);
+        // O heartbeat agora é iniciado automaticamente no GT06Client após login
         _startLocationTimer();
         break;
         
@@ -280,14 +331,16 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   void _onServerCommand(String command) {
-    // Envia para Arduino
+    _addLog(LogType.command, 'Comando Traccar recebido: $command');
+    
+    // Envia para Arduino se estiver conectado
     if (_arduinoService.isConnected) {
       final arduinoCmd = _arduinoService.convertTraccarCommand(command);
+      _addLog(LogType.arduino, 'Convertido para Arduino: $arduinoCmd');
       _arduinoService.sendCommand(arduinoCmd);
+    } else {
+      _addLog(LogType.warning, 'Arduino não conectado - comando não enviado');
     }
-    
-    // Notifica na UI
-    _addLog(LogType.command, 'Comando Traccar: $command');
   }
 
   /// ==========================================================================

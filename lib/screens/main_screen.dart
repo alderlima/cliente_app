@@ -75,7 +75,7 @@ class MainScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 colors: [Colors.cyan, Colors.blue],
               ),
               borderRadius: BorderRadius.circular(16),
@@ -232,31 +232,12 @@ class MainScreen extends StatelessWidget {
   /// ==========================================================================
 
   Widget _buildStatusCard(BuildContext context, TrackerProvider provider) {
-    Color statusColor;
-    IconData statusIcon;
+    // Usa os getters do provider para cor e ícone
+    final statusColor = provider.statusColor;
+    final statusIcon = provider.statusIcon;
     
-    switch (provider.status) {
-      case TrackerStatus.online:
-        statusColor = Colors.green;
-        statusIcon = Icons.check_circle;
-        break;
-      case TrackerStatus.connecting:
-      case TrackerStatus.loggingIn:
-        statusColor = Colors.orange;
-        statusIcon = Icons.sync;
-        break;
-      case TrackerStatus.connected:
-        statusColor = Colors.blue;
-        statusIcon = Icons.cloud_done;
-        break;
-      case TrackerStatus.error:
-        statusColor = Colors.red;
-        statusIcon = Icons.error;
-        break;
-      default:
-        statusColor = Colors.grey;
-        statusIcon = Icons.cloud_off;
-    }
+    // Determina se deve mostrar botão de conectar ou desconectar
+    final bool showDisconnect = provider.isConnecting || provider.isOnline;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -298,7 +279,9 @@ class MainScreen extends StatelessWidget {
               Text(
                 provider.isOnline 
                     ? 'Conectado a ${provider.config.serverAddress}:${provider.config.serverPort}'
-                    : 'Aguardando conexão',
+                    : provider.isConnecting
+                        ? 'Estabelecendo conexão...'
+                        : 'Aguardando conexão',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.grey[400],
@@ -312,11 +295,11 @@ class MainScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton.icon(
-                  onPressed: provider.isOnline || provider.status == TrackerStatus.connecting
+                  onPressed: showDisconnect
                       ? provider.disconnect
                       : provider.connect,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: provider.isOnline ? Colors.red : Colors.green,
+                    backgroundColor: showDisconnect ? Colors.red : Colors.green,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -324,13 +307,11 @@ class MainScreen extends StatelessWidget {
                     elevation: 8,
                   ),
                   icon: Icon(
-                    provider.isOnline ? Icons.stop : Icons.play_arrow,
+                    showDisconnect ? Icons.stop : Icons.play_arrow,
                     size: 28,
                   ),
                   label: Text(
-                    provider.isOnline || provider.status == TrackerStatus.connecting
-                        ? 'DESCONECTAR'
-                        : 'CONECTAR',
+                    showDisconnect ? 'DESCONECTAR' : 'CONECTAR',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -362,7 +343,7 @@ class MainScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.analytics, color: Colors.cyan),
+                  const Icon(Icons.analytics, color: Colors.cyan),
                   const SizedBox(width: 8),
                   const Text(
                     'Estatísticas',
@@ -370,6 +351,24 @@ class MainScreen extends StatelessWidget {
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Indicador de conexão Arduino
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: provider.isArduinoConnected ? Colors.green : Colors.grey,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    provider.isArduinoConnected ? 'Arduino OK' : 'Arduino Off',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: provider.isArduinoConnected ? Colors.green : Colors.grey,
                     ),
                   ),
                 ],
@@ -466,7 +465,7 @@ class MainScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.gps_fixed, color: Colors.green),
+                  const Icon(Icons.gps_fixed, color: Colors.green),
                   const SizedBox(width: 8),
                   const Text(
                     'Localização GPS',
@@ -698,7 +697,7 @@ class MainScreen extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.terminal, color: Colors.purple),
+                  const Icon(Icons.terminal, color: Colors.purple),
                   const SizedBox(width: 8),
                   const Text(
                     'Logs Recentes',

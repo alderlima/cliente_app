@@ -31,6 +31,7 @@ class GT06Client {
   String _serverAddress = '';
   int _serverPort = 5023;
   String _imei = '';
+  int _heartbeatInterval = 30;
   
   // Timers
   Timer? _heartbeatTimer;
@@ -74,6 +75,7 @@ class GT06Client {
     _serverAddress = serverAddress;
     _serverPort = serverPort;
     _imei = imei;
+    _heartbeatInterval = heartbeatInterval;
     _protocol.resetSerial();
     
     _notifyEvent(ClientEventType.connecting, 'Conectando a $serverAddress:$serverPort...');
@@ -333,6 +335,9 @@ class GT06Client {
   void _handleLoginAck(GT06ServerPacket packet) {
     _isLoggedIn = true;
     _notifyEvent(ClientEventType.loggedIn, 'Login aceito pelo servidor!');
+    
+    // Inicia heartbeat automático após login bem-sucedido
+    startHeartbeat(_heartbeatInterval);
   }
 
   /// Manipula ACK de heartbeat
@@ -403,6 +408,9 @@ class GT06Client {
       Duration(seconds: intervalSeconds),
       (_) => sendHeartbeat(),
     );
+    
+    // Envia heartbeat imediatamente também
+    sendHeartbeat();
   }
 
   /// Para timers
