@@ -153,7 +153,7 @@ class _LogsScreenState extends State<LogsScreen> {
                 _autoScroll = !_autoScroll;
               });
             },
-            icon: Icon(_autoScroll ? Icons.vertical_align_bottom : Icons.unfold_less),
+            icon: Icon(_autoScroll ? Icons.scrollable_header : Icons.unfold_less),
             tooltip: _autoScroll ? 'Auto-scroll ligado' : 'Auto-scroll desligado',
             color: _autoScroll ? Colors.cyan : Colors.grey,
           ),

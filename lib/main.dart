@@ -40,7 +40,7 @@ class RastreadorApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
-          cardTheme: CardThemeData(
+          cardTheme: CardTheme(
             elevation: 8,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
