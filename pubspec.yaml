@@ -11,6 +11,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Adicionado para resolver o erro de gen_localizations no build
+  flutter_localizations:
+    sdk: flutter
   
   # GPS e Localização
   geolocator: ^10.1.0
@@ -40,8 +43,15 @@ dependencies:
   # Logs e Debug
   logger: ^2.0.2
 
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
 flutter:
   uses-material-design: true
+  # CORREÇÃO: Necessário para gerar códigos de tradução/localização automaticamente
+  generate: true
   
   assets:
-    - assets/
+    - assets/ # Ajustado para incluir a pasta toda (garanta que a pasta exista)
