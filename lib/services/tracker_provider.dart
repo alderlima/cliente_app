@@ -169,14 +169,6 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   /// ==========================================================================
-  /// HANDLE PACKET DIRECTLY (se necessário)
-  /// ==========================================================================
-
-  // NOTA: Este método não é mais necessário se os eventos já são tratados pelo eventStream
-  // Se ainda precisar processar pacotes diretamente, verifique se GT06Client tem um método para isso
-  // Por enquanto, comentamos esta seção pois os eventos já são tratados no _onClientEvent
-
-  /// ==========================================================================
   /// CONFIGURAÇÃO
   /// ==========================================================================
 
