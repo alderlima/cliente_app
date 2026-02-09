@@ -345,11 +345,21 @@ class TrackerProvider extends ChangeNotifier {
         _stats.packetsReceived++;
         _addLog(LogType.received, event.message, event.data?['hex']);
         
-        // Detecta automaticamente login bem-sucedido quando recebe qualquer pacote
-        // após estar no estado loggingIn (isso inclui o login ack)
+        // VERIFICAÇÃO CRÍTICA: Se recebeu qualquer pacote enquanto está em loggingIn,
+        // assume que o login foi aceito (inclui o pacote de login ack 0x01)
         if (_status == TrackerStatus.loggingIn) {
-          print('[TRACKER_PROVIDER] Recebido pacote enquanto em loggingIn, assumindo login aceito');
-          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via pacote recebido <<<');
+          print('[TRACKER_PROVIDER] >>> RECEBIDO PACOTE ENQUANTO EM LOGGING_IN <<<');
+          print('[TRACKER_PROVIDER] Pacote recebido: ${event.data?['hex'] ?? 'Sem hex'}');
+          
+          // Verifica se é um pacote de login ack (0x01)
+          final hexData = event.data?['hex'] ?? '';
+          if (hexData.contains('78780501')) { // Login ack do protocolo GT06
+            print('[TRACKER_PROVIDER] >>> PACOTE LOGIN ACK DETECTADO! <<<');
+            print('[TRACKER_PROVIDER] >>> ATUALIZANDO PARA ONLINE <<<');
+          } else {
+            print('[TRACKER_PROVIDER] >>> Outro tipo de pacote recebido, assumindo login aceito <<<');
+          }
+          
           _stopConnectionTimeoutTimer();
           _updateStatus(TrackerStatus.online);
           _startLocationTimer();
@@ -359,44 +369,17 @@ class TrackerProvider extends ChangeNotifier {
       case ClientEventType.heartbeatAck:
         _stats.heartbeatsSent++;
         _addLog(LogType.info, event.message);
-        
-        // Se recebeu heartbeat ack e ainda está em loggingIn, assume login aceito
-        if (_status == TrackerStatus.loggingIn) {
-          print('[TRACKER_PROVIDER] Recebido heartbeat ack enquanto em loggingIn');
-          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via heartbeat ack <<<');
-          _stopConnectionTimeoutTimer();
-          _updateStatus(TrackerStatus.online);
-          _startLocationTimer();
-        }
         break;
         
       case ClientEventType.locationAck:
         _stats.locationsSent++;
         _addLog(LogType.info, event.message);
-        
-        // Se recebeu location ack e ainda está em loggingIn, assume login aceito
-        if (_status == TrackerStatus.loggingIn) {
-          print('[TRACKER_PROVIDER] Recebido location ack enquanto em loggingIn');
-          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via location ack <<<');
-          _stopConnectionTimeoutTimer();
-          _updateStatus(TrackerStatus.online);
-          _startLocationTimer();
-        }
         break;
         
       case ClientEventType.commandReceived:
         print('[TRACKER_PROVIDER] >>> Comando recebido no evento! <<<');
         _stats.commandsReceived++;
         _addLog(LogType.command, event.message, event.data?['command']);
-        
-        // Se recebeu comando e ainda está em loggingIn, assume login aceito
-        if (_status == TrackerStatus.loggingIn) {
-          print('[TRACKER_PROVIDER] Recebido comando enquanto em loggingIn');
-          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via comando recebido <<<');
-          _stopConnectionTimeoutTimer();
-          _updateStatus(TrackerStatus.online);
-          _startLocationTimer();
-        }
         break;
         
       default:
@@ -423,8 +406,8 @@ class TrackerProvider extends ChangeNotifier {
     // Se recebeu qualquer comando do servidor enquanto está em loggingIn,
     // assume que o login foi aceito (o servidor só envia comandos para dispositivos autenticados)
     if (_status == TrackerStatus.loggingIn) {
-      print('[TRACKER_PROVIDER] Recebido comando do servidor enquanto em loggingIn');
-      print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via comando do servidor <<<');
+      print('[TRACKER_PROVIDER] >>> COMANDO DO SERVIDOR RECEBIDO ENQUANTO EM LOGGING_IN <<<');
+      print('[TRACKER_PROVIDER] >>> ATUALIZANDO PARA ONLINE <<<');
       _stopConnectionTimeoutTimer();
       _updateStatus(TrackerStatus.online);
       _startLocationTimer();
@@ -458,14 +441,14 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   void _startConnectionTimeoutTimer() {
-    print('[TRACKER_PROVIDER] Iniciando timer de timeout de conexão (30s)');
+    print('[TRACKER_PROVIDER] Iniciando timer de timeout de conexão (10s)');
     _stopConnectionTimeoutTimer();
     
-    _connectionTimeoutTimer = Timer(const Duration(seconds: 30), () {
-      print('[TRACKER_PROVIDER] Timeout de autenticação atingido (30s)');
+    _connectionTimeoutTimer = Timer(const Duration(seconds: 10), () {
+      print('[TRACKER_PROVIDER] Timeout de autenticação atingido (10s)');
       if (_status == TrackerStatus.loggingIn) {
         print('[TRACKER_PROVIDER] >>> Autenticação falhou por timeout <<<');
-        _addLog(LogType.error, 'Timeout de autenticação (30s) - servidor não respondeu');
+        _addLog(LogType.error, 'Timeout de autenticação (10s) - servidor não respondeu');
         _updateStatus(TrackerStatus.error);
         _stopLocationTimer();
       }

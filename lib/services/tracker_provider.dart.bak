@@ -39,6 +39,7 @@ class TrackerProvider extends ChangeNotifier {
   
   // Timers
   Timer? _locationTimer;
+  Timer? _connectionTimeoutTimer;
   
   // Subscriptions
   StreamSubscription? _clientEventSub;
@@ -276,6 +277,7 @@ class TrackerProvider extends ChangeNotifier {
 
   Future<void> disconnect() async {
     print('[TRACKER_PROVIDER] disconnect() chamado');
+    _stopConnectionTimeoutTimer();
     _stopLocationTimer();
     await _gpsService.stopTracking();
     await _gt06Client.disconnect();
@@ -306,6 +308,8 @@ class TrackerProvider extends ChangeNotifier {
       case ClientEventType.loggingIn:
         print('[TRACKER_PROVIDER] >>> Estado: LOGGING_IN <<<');
         _updateStatus(TrackerStatus.loggingIn);
+        // Inicia timeout para autenticação
+        _startConnectionTimeoutTimer();
         break;
         
       case ClientEventType.loggedIn:
@@ -313,18 +317,21 @@ class TrackerProvider extends ChangeNotifier {
         print('[TRACKER_PROVIDER] ==========================================');
         print('[TRACKER_PROVIDER] = LOGIN ACEITO! DISPOSITIVO ONLINE!      =');
         print('[TRACKER_PROVIDER] ==========================================');
+        _stopConnectionTimeoutTimer();
         _updateStatus(TrackerStatus.online);
         _startLocationTimer();
         break;
         
       case ClientEventType.disconnected:
         print('[TRACKER_PROVIDER] >>> Estado: DISCONNECTED <<<');
+        _stopConnectionTimeoutTimer();
         _updateStatus(TrackerStatus.disconnected);
         _stopLocationTimer();
         break;
         
       case ClientEventType.error:
         print('[TRACKER_PROVIDER] >>> Estado: ERROR <<<');
+        _stopConnectionTimeoutTimer();
         _updateStatus(TrackerStatus.error);
         _addLog(LogType.error, event.message);
         break;
@@ -337,22 +344,59 @@ class TrackerProvider extends ChangeNotifier {
       case ClientEventType.packetReceived:
         _stats.packetsReceived++;
         _addLog(LogType.received, event.message, event.data?['hex']);
+        
+        // Detecta automaticamente login bem-sucedido quando recebe qualquer pacote
+        // após estar no estado loggingIn (isso inclui o login ack)
+        if (_status == TrackerStatus.loggingIn) {
+          print('[TRACKER_PROVIDER] Recebido pacote enquanto em loggingIn, assumindo login aceito');
+          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via pacote recebido <<<');
+          _stopConnectionTimeoutTimer();
+          _updateStatus(TrackerStatus.online);
+          _startLocationTimer();
+        }
         break;
         
       case ClientEventType.heartbeatAck:
         _stats.heartbeatsSent++;
         _addLog(LogType.info, event.message);
+        
+        // Se recebeu heartbeat ack e ainda está em loggingIn, assume login aceito
+        if (_status == TrackerStatus.loggingIn) {
+          print('[TRACKER_PROVIDER] Recebido heartbeat ack enquanto em loggingIn');
+          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via heartbeat ack <<<');
+          _stopConnectionTimeoutTimer();
+          _updateStatus(TrackerStatus.online);
+          _startLocationTimer();
+        }
         break;
         
       case ClientEventType.locationAck:
         _stats.locationsSent++;
         _addLog(LogType.info, event.message);
+        
+        // Se recebeu location ack e ainda está em loggingIn, assume login aceito
+        if (_status == TrackerStatus.loggingIn) {
+          print('[TRACKER_PROVIDER] Recebido location ack enquanto em loggingIn');
+          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via location ack <<<');
+          _stopConnectionTimeoutTimer();
+          _updateStatus(TrackerStatus.online);
+          _startLocationTimer();
+        }
         break;
         
       case ClientEventType.commandReceived:
         print('[TRACKER_PROVIDER] >>> Comando recebido no evento! <<<');
         _stats.commandsReceived++;
         _addLog(LogType.command, event.message, event.data?['command']);
+        
+        // Se recebeu comando e ainda está em loggingIn, assume login aceito
+        if (_status == TrackerStatus.loggingIn) {
+          print('[TRACKER_PROVIDER] Recebido comando enquanto em loggingIn');
+          print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via comando recebido <<<');
+          _stopConnectionTimeoutTimer();
+          _updateStatus(TrackerStatus.online);
+          _startLocationTimer();
+        }
         break;
         
       default:
@@ -376,15 +420,14 @@ class TrackerProvider extends ChangeNotifier {
     
     _addLog(LogType.command, 'Comando Traccar: $command');
     
-    // Se for um comando de confirmação de login (pode vir como resposta)
-    if (command.contains('login') || command.contains('ack')) {
-      print('[TRACKER_PROVIDER] Detecção de possível confirmação de login');
-      // Verifica se estamos no estado loggingIn e atualiza para online
-      if (_status == TrackerStatus.loggingIn) {
-        print('[TRACKER_PROVIDER] Atualizando estado de loggingIn para online via comando');
-        _updateStatus(TrackerStatus.online);
-        _startLocationTimer();
-      }
+    // Se recebeu qualquer comando do servidor enquanto está em loggingIn,
+    // assume que o login foi aceito (o servidor só envia comandos para dispositivos autenticados)
+    if (_status == TrackerStatus.loggingIn) {
+      print('[TRACKER_PROVIDER] Recebido comando do servidor enquanto em loggingIn');
+      print('[TRACKER_PROVIDER] >>> Atualizando para ONLINE via comando do servidor <<<');
+      _stopConnectionTimeoutTimer();
+      _updateStatus(TrackerStatus.online);
+      _startLocationTimer();
     }
     
     // Envia para Arduino se estiver conectado
@@ -408,6 +451,31 @@ class TrackerProvider extends ChangeNotifier {
       print('[TRACKER_PROVIDER] Comando não foi enviado ao Arduino');
       _addLog(LogType.warning, 'Arduino não conectado - comando não enviado');
     }
+  }
+
+  /// ==========================================================================
+  /// TIMEOUT DE CONEXÃO
+  /// ==========================================================================
+
+  void _startConnectionTimeoutTimer() {
+    print('[TRACKER_PROVIDER] Iniciando timer de timeout de conexão (30s)');
+    _stopConnectionTimeoutTimer();
+    
+    _connectionTimeoutTimer = Timer(const Duration(seconds: 30), () {
+      print('[TRACKER_PROVIDER] Timeout de autenticação atingido (30s)');
+      if (_status == TrackerStatus.loggingIn) {
+        print('[TRACKER_PROVIDER] >>> Autenticação falhou por timeout <<<');
+        _addLog(LogType.error, 'Timeout de autenticação (30s) - servidor não respondeu');
+        _updateStatus(TrackerStatus.error);
+        _stopLocationTimer();
+      }
+    });
+  }
+
+  void _stopConnectionTimeoutTimer() {
+    print('[TRACKER_PROVIDER] Parando timer de timeout de conexão');
+    _connectionTimeoutTimer?.cancel();
+    _connectionTimeoutTimer = null;
   }
 
   /// ==========================================================================
@@ -586,6 +654,7 @@ class TrackerProvider extends ChangeNotifier {
     _arduinoStateSub?.cancel();
     
     _locationTimer?.cancel();
+    _connectionTimeoutTimer?.cancel();
     
     _gt06Client.dispose();
     _gpsService.dispose();
