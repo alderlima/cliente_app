@@ -297,15 +297,21 @@ class ArduinoService {
       print('[ARDUINO_SERVICE] Hex: ${message.codeUnits.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
       
       final data = Uint8List.fromList(utf8.encode(message));
+      final bytesWritten = await _port!.write(data);
       
-      // O método write do usb_serial retorna Future<void>, não a quantidade de bytes.
-      await _port!.write(data);
+      print('[ARDUINO_SERVICE] Bytes escritos: $bytesWritten');
       
-      _commandsSent++;
-      _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
-      _updateState(lastMessage: command, lastMessageTime: DateTime.now());
-      print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
-      return true;
+      if (bytesWritten > 0) {
+        _commandsSent++;
+        _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
+        _updateState(lastMessage: command, lastMessageTime: DateTime.now());
+        print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
+        return true;
+      } else {
+        print('[ARDUINO_SERVICE] ERRO: Nenhum byte escrito!');
+        _notifyMessage('Falha ao escrever na porta', ArduinoMessageType.error);
+        return false;
+      }
       
     } catch (e) {
       print('[ARDUINO_SERVICE] ERRO ao enviar: $e');
@@ -313,7 +319,6 @@ class ArduinoService {
       return false;
     }
   }
-
 
   /// Envia comando para parar o motor (ENGINE_STOP)
   Future<bool> sendEngineStop() async {
