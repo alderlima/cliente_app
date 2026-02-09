@@ -291,21 +291,11 @@ class ArduinoService {
       print('[ARDUINO_SERVICE] Enviando: ${message.length} bytes');
       print('[ARDUINO_SERVICE] Hex: ${message.codeUnits.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
       
-    //  final data = Uint8List.fromList(utf8.encode(message));
-    //  final bytesWritten = await _port!.write(data);
-      
-    //  print('[ARDUINO_SERVICE] Bytes escritos: $bytesWritten');
-
       final data = Uint8List.fromList(utf8.encode(message));
-        
-      try {
-        await _port!.write(data);
-        print('[ARDUINO_SERVICE] Dados enviados com sucesso.');
-        // Remova a verificação 'if (bytesWritten > 0)'
-      } catch (e) {
-        print('[ARDUINO_SERVICE] Erro ao escrever na porta: $e');
-      }
-
+      final bytesWritten = await _port!.write(data);
+      
+      print('[ARDUINO_SERVICE] Bytes escritos: $bytesWritten');
+      
       if (bytesWritten > 0) {
         _commandsSent++;
         _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
