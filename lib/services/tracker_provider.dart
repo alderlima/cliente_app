@@ -1,5 +1,3 @@
-[file name]: tracker_provider.dart
-[file content begin]
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -596,4 +594,3 @@ class TrackerProvider extends ChangeNotifier {
     super.dispose();
   }
 }
-[file content end]
