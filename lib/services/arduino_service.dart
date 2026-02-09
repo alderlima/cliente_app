@@ -291,32 +291,18 @@ class ArduinoService {
       print('[ARDUINO_SERVICE] Enviando: ${message.length} bytes');
       print('[ARDUINO_SERVICE] Hex: ${message.codeUnits.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
       
-    //  final data = Uint8List.fromList(utf8.encode(message));
-    //  final bytesWritten = await _port!.write(data);
-      
-    //  print('[ARDUINO_SERVICE] Bytes escritos: $bytesWritten');
-
       final data = Uint8List.fromList(utf8.encode(message));
-        
-      try {
-        await _port!.write(data);
-        print('[ARDUINO_SERVICE] Dados enviados com sucesso.');
-        // Remova a verificação 'if (bytesWritten > 0)'
-      } catch (e) {
-        print('[ARDUINO_SERVICE] Erro ao escrever na porta: $e');
-      }
-
-      if (bytesWritten > 0) {
-        _commandsSent++;
-        _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
-        _updateState(lastMessage: command, lastMessageTime: DateTime.now());
-        print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
-        return true;
-      } else {
-        print('[ARDUINO_SERVICE] ERRO: Nenhum byte escrito!');
-        _notifyMessage('Falha ao escrever na porta', ArduinoMessageType.error);
-        return false;
-      }
+      
+      // O método write retorna Future<void>, portanto não atribuímos a uma variável.
+      // Se houver falha na escrita, o catch será acionado.
+      await _port!.write(data);
+      
+      _commandsSent++;
+      _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
+      _updateState(lastMessage: command, lastMessageTime: DateTime.now());
+      
+      print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
+      return true;
       
     } catch (e) {
       print('[ARDUINO_SERVICE] ERRO ao enviar: $e');
@@ -324,6 +310,7 @@ class ArduinoService {
       return false;
     }
   }
+
 
   /// Envia comando formatado para o Arduino
   /// 
