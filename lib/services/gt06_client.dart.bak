@@ -419,40 +419,47 @@ class GT06Client {
   }
 
   /// Manipula comando do servidor (0x80) - IGUAL AO PYTHON
-void _handleCommand(GT06ServerPacket packet) {
-  print('[GT06_CLIENT] ==========================================');
-  print('[GT06_CLIENT] >>> PROCESSANDO COMANDO (0x80) <<<');
-  print('[GT06_CLIENT] Serial: ${packet.serialNumber}');
-  print('[GT06_CLIENT] Content (hex): ${GT06Protocol.bytesToHex(packet.content)}');
-  print('[GT06_CLIENT] Content (ascii): ${String.fromCharCodes(packet.content.where((b) => b != 0))}');
-  
-  final command = _protocol.parseCommand(packet);
-  
-  if (command != null) {
-    print('[GT06_CLIENT] >>> COMANDO PARSEADO <<<');
-    print('[GT06_CLIENT] Tipo: ${command.commandType}');
-    print('[GT06_CLIENT] Raw: "${command.rawCommand}"');
-    print('[GT06_CLIENT] Arduino: "${command.arduinoCommand}"');
+  void _handleCommand(GT06ServerPacket packet) {
+    print('[GT06_CLIENT] ==========================================');
+    print('[GT06_CLIENT] >>> PROCESSANDO COMANDO (0x80) <<<');
+    print('[GT06_CLIENT] Serial: ${packet.serialNumber}');
+    print('[GT06_CLIENT] Content: ${GT06Protocol.bytesToHex(packet.content)}');
     
-    _notifyEvent(
-      ClientEventType.commandReceived,
-      'Comando: ${command.commandType}',
-      data: {
-        'raw': command.rawCommand,
-        'type': command.commandType,
-        'arduino': command.arduinoCommand,
-      },
-    );
+    final command = _protocol.parseCommand(packet);
     
-    _commandController.add(command);
-    print('[GT06_CLIENT] Comando adicionado ao stream');
+    if (command != null) {
+      print('[GT06_CLIENT] >>> COMANDO PARSEADO <<<');
+      print('[GT06_CLIENT] Tipo: ${command.commandType}');
+      print('[GT06_CLIENT] Raw: "${command.rawCommand}"');
+      print('[GT06_CLIENT] Arduino: "${command.arduinoCommand}"');
+      
+      _notifyEvent(
+        ClientEventType.commandReceived,
+        'Comando: ${command.commandType}',
+        data: {
+          'raw': command.rawCommand,
+          'type': command.commandType,
+          'arduino': command.arduinoCommand,
+        },
+      );
+      
+      // Adiciona ao stream de comandos
+      _commandController.add(command);
+      print('[GT06_CLIENT] Comando adicionado ao stream');
+      
+      // Envia ACK para o Traccar (IMEDIATAMENTE, igual ao Python)
+      print('[GT06_CLIENT] Enviando ACK do comando...');
+      sendCommandAck(packet.serialNumber);
+      
+    } else {
+      print('[GT06_CLIENT] Não foi possível parsear o comando');
+      // Mesmo assim envia ACK (igual ao Python)
+      print('[GT06_CLIENT] Enviando ACK mesmo sem parse');
+      sendCommandAck(packet.serialNumber);
+    }
     
-    sendCommandAck(packet.serialNumber);
-  } else {
-    print('[GT06_CLIENT] Não foi possível parsear o comando');
-    sendCommandAck(packet.serialNumber);
+    print('[GT06_CLIENT] ==========================================');
   }
-}
 
   /// Manipula ACK de comando
   void _handleCommandAck(GT06ServerPacket packet) {

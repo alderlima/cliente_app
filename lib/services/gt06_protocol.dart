@@ -360,64 +360,80 @@ class GT06Protocol {
   /// 3. Procura por "Relay" no texto
   GT06Command? parseCommand(GT06ServerPacket packet) {
     if (packet.protocolNumber != PROTOCOL_COMMAND) {
+      print('[GT06_PROTOCOL] Não é comando (protocolo: ${packet.protocolNumber})');
       return null;
     }
     
     try {
-      print('[GT06_PROTOCOL] Parse comando - content: ${bytesToHex(packet.content)}');
+      print('[GT06_PROTOCOL] =========== DEBUG PARSE COMMAND ===========');
+      print('[GT06_PROTOCOL] Bytes crus: ${bytesToHex(packet.content)}');
       
-      // Remove bytes nulos igual ao Python
+      // Mostra cada byte e seu caractere
+      print('[GT06_PROTOCOL] Análise byte a byte:');
+      for (int i = 0; i < packet.content.length; i++) {
+        int byte = packet.content[i];
+        String char = (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '.';
+        print('[GT06_PROTOCOL]   [$i]: 0x${byte.toRadixString(16).padLeft(2, '0')} -> $char');
+      }
+      
+      // Remove bytes nulos
       final cleanBytes = <int>[];
       for (int byte in packet.content) {
         if (byte != 0) cleanBytes.add(byte);
       }
       
+      print('[GT06_PROTOCOL] Bytes limpos: ${bytesToHex(Uint8List.fromList(cleanBytes))}');
+      
       if (cleanBytes.isEmpty) {
-        print('[GT06_PROTOCOL] Payload vazio após limpeza');
+        print('[GT06_PROTOCOL] Payload vazio');
         return null;
       }
       
-      // Decodifica como ASCII, ignorando erros (igual ao Python com errors="ignore")
+      // Tenta decodificar de várias formas
       String text = String.fromCharCodes(cleanBytes);
       text = text.trim();
       
-      print('[GT06_PROTOCOL] Texto do comando: "$text"');
+      print('[GT06_PROTOCOL] Texto decodificado: "$text"');
+      print('[GT06_PROTOCOL] Comprimento: ${text.length}');
       
-      // Verifica se contém "Relay" igual ao Python
-      if (text.contains("Relay")) {
-        print('[GT06_PROTOCOL] Comando Relay detectado');
-        
-        String commandType;
-        String rawCommand = text;
-        
-        if (text.contains("Relay,1")) {
+      // Verifica todas as possibilidades
+      String upper = text.toUpperCase();
+      print('[GT06_PROTOCOL] Upper: "$upper"');
+      print('[GT06_PROTOCOL] Contém "RELAY"? ${upper.contains("RELAY")}');
+      print('[GT06_PROTOCOL] Contém ",1"? ${upper.contains(",1")}');
+      print('[GT06_PROTOCOL] Contém ",0"? ${upper.contains(",0")}');
+      print('[GT06_PROTOCOL] ==========================================');
+      
+      // Detecta o comando
+      String commandType = 'UNKNOWN';
+      
+      if (upper.contains("RELAY")) {
+        if (upper.contains(",1") || upper.contains("1#")) {
           commandType = 'ENGINE_STOP';
-          print('[GT06_PROTOCOL] ENGINE_STOP');
-        } else if (text.contains("Relay,0")) {
+          print('[GT06_PROTOCOL] Detectado: ENGINE_STOP');
+        } else if (upper.contains(",0") || upper.contains("0#")) {
           commandType = 'ENGINE_RESUME';
-          print('[GT06_PROTOCOL] ENGINE_RESUME');
-        } else {
-          commandType = 'UNKNOWN';
-          print('[GT06_PROTOCOL] Relay desconhecido');
+          print('[GT06_PROTOCOL] Detectado: ENGINE_RESUME');
         }
-        
+      } else if (upper.contains("STOP") || upper.contains("DESLIGAR") || upper.contains("BLOQUEAR")) {
+        commandType = 'ENGINE_STOP';
+      } else if (upper.contains("START") || upper.contains("LIGAR") || upper.contains("DESBLOQUEAR")) {
+        commandType = 'ENGINE_RESUME';
+      }
+      
+      if (commandType != 'UNKNOWN') {
         return GT06Command(
-          rawCommand: rawCommand,
+          rawCommand: text,
           commandType: commandType,
           serialNumber: packet.serialNumber,
         );
       }
       
-      // Se não for Relay, retorna o texto original
-      print('[GT06_PROTOCOL] Não é comando Relay');
-      return GT06Command(
-        rawCommand: text,
-        commandType: 'TEXT',
-        serialNumber: packet.serialNumber,
-      );
+      print('[GT06_PROTOCOL] Comando não reconhecido');
+      return null;
       
     } catch (e, stackTrace) {
-      print('[GT06_PROTOCOL] Erro no parse de comando: $e');
+      print('[GT06_PROTOCOL] Erro no parse: $e');
       print('[GT06_PROTOCOL] Stack: $stackTrace');
       return null;
     }
@@ -549,9 +565,9 @@ class GT06Command {
 
   /// Retorna o comando para enviar ao Arduino (igual ao Python)
   String get arduinoCommand {
-    if (rawCommand.contains("Relay,1")) {
+    if (rawCommand.contains("Relay,1") || rawCommand.toUpperCase().contains("RELAY,1")) {
       return 'ENGINE_STOP';
-    } else if (rawCommand.contains("Relay,0")) {
+    } else if (rawCommand.contains("Relay,0") || rawCommand.toUpperCase().contains("RELAY,0")) {
       return 'ENGINE_RESUME';
     }
     return rawCommand; // Para outros comandos, envia o texto original

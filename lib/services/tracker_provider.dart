@@ -357,28 +357,43 @@ class TrackerProvider extends ChangeNotifier {
     
     _addLog(LogType.command, 'Comando Traccar: ${command.rawCommand}');
     
-    // Verifica se é comando Relay igual ao Python
-    if (command.rawCommand.contains("Relay")) {
-      print('[TRACKER_PROVIDER] >>> Comando Relay detectado! <<<');
-      print('[TRACKER_PROVIDER] Texto: "${command.rawCommand}"');
-      
-      String arduinoCmd;
-      if (command.rawCommand.contains("Relay,1")) {
-        arduinoCmd = "ENGINE_STOP";
-        print('[TRACKER_PROVIDER] ENGINE_STOP');
-      } else if (command.rawCommand.contains("Relay,0")) {
-        arduinoCmd = "ENGINE_RESUME";
-        print('[TRACKER_PROVIDER] ENGINE_RESUME');
-      } else {
-        print('[TRACKER_PROVIDER] Relay desconhecido');
-        arduinoCmd = command.rawCommand;
-      }
-      
-      // Envia para Arduino se estiver conectado
+    // Se for um comando conhecido (ENGINE_STOP ou ENGINE_RESUME)
+    if (command.commandType == 'ENGINE_STOP' || command.commandType == 'ENGINE_RESUME') {
+      print('[TRACKER_PROVIDER] Comando conhecido: ${command.commandType}');
+      String arduinoCmd = command.arduinoCommand;
       _sendToArduinoWithRetry(arduinoCmd, command.rawCommand);
     } else {
-      print('[TRACKER_PROVIDER] Comando não é Relay, ignorando');
-      _addLog(LogType.info, 'Comando não Relay ignorado: ${command.rawCommand}');
+      // Caso contrário, tenta detectar manualmente
+      _detectAndSendCommand(command.rawCommand);
+    }
+  }
+
+  /// Detectar comando manualmente (fallback)
+  void _detectAndSendCommand(String rawCommand) {
+    print('[TRACKER_PROVIDER] Tentando detectar comando manualmente...');
+    String upper = rawCommand.toUpperCase();
+    
+    String arduinoCmd = '';
+    
+    if (upper.contains("RELAY")) {
+      if (upper.contains(",1") || upper.contains("1#")) {
+        arduinoCmd = 'ENGINE_STOP';
+        print('[TRACKER_PROVIDER] Detectado manualmente: ENGINE_STOP');
+      } else if (upper.contains(",0") || upper.contains("0#")) {
+        arduinoCmd = 'ENGINE_RESUME';
+        print('[TRACKER_PROVIDER] Detectado manualmente: ENGINE_RESUME');
+      }
+    } else if (upper.contains("STOP") || upper.contains("DESLIGAR") || upper.contains("BLOQUEAR")) {
+      arduinoCmd = 'ENGINE_STOP';
+    } else if (upper.contains("START") || upper.contains("LIGAR") || upper.contains("DESBLOQUEAR")) {
+      arduinoCmd = 'ENGINE_RESUME';
+    }
+    
+    if (arduinoCmd.isNotEmpty) {
+      _sendToArduinoWithRetry(arduinoCmd, rawCommand);
+    } else {
+      print('[TRACKER_PROVIDER] Nenhum comando detectado');
+      _addLog(LogType.warning, 'Comando não reconhecido: $rawCommand');
     }
   }
 
