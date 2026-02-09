@@ -39,7 +39,6 @@ class TrackerProvider extends ChangeNotifier {
   
   // Timers
   Timer? _locationTimer;
-  Timer? _connectionTimeoutTimer;
   
   // Subscriptions
   StreamSubscription? _clientEventSub;
@@ -57,20 +56,15 @@ class TrackerProvider extends ChangeNotifier {
   List<LogEntry> get logs => List.unmodifiable(_logs);
   ArduinoService get arduinoService => _arduinoService;
   
-  /// Verifica se está online (conectado e autenticado)
   bool get isOnline => _status == TrackerStatus.online;
-  
-  /// Verifica se está em qualquer estado de conexão (para o botão)
   bool get isConnecting => _status == TrackerStatus.connecting || 
                            _status == TrackerStatus.connected || 
                            _status == TrackerStatus.loggingIn;
-  
-  /// Verifica se está conectado (socket aberto)
   bool get isConnected => _status == TrackerStatus.connected || 
                           _status == TrackerStatus.loggingIn || 
                           _status == TrackerStatus.online;
-  
   bool get isArduinoConnected => _arduinoState.status == ArduinoStatus.connected;
+  
   String get statusText {
     switch (_status) {
       case TrackerStatus.disconnected: return 'Desconectado';
@@ -82,37 +76,25 @@ class TrackerProvider extends ChangeNotifier {
     }
   }
   
-  /// Retorna a cor do status para a UI
   Color get statusColor {
     switch (_status) {
-      case TrackerStatus.online:
-        return Colors.green;
+      case TrackerStatus.online: return Colors.green;
       case TrackerStatus.connecting:
-      case TrackerStatus.loggingIn:
-        return Colors.orange;
-      case TrackerStatus.connected:
-        return Colors.blue;
-      case TrackerStatus.error:
-        return Colors.red;
-      case TrackerStatus.disconnected:
-        return Colors.grey;
+      case TrackerStatus.loggingIn: return Colors.orange;
+      case TrackerStatus.connected: return Colors.blue;
+      case TrackerStatus.error: return Colors.red;
+      case TrackerStatus.disconnected: return Colors.grey;
     }
   }
   
-  /// Retorna o ícone do status para a UI
   IconData get statusIcon {
     switch (_status) {
-      case TrackerStatus.online:
-        return Icons.check_circle;
+      case TrackerStatus.online: return Icons.check_circle;
       case TrackerStatus.connecting:
-      case TrackerStatus.loggingIn:
-        return Icons.sync;
-      case TrackerStatus.connected:
-        return Icons.cloud_done;
-      case TrackerStatus.error:
-        return Icons.error;
-      case TrackerStatus.disconnected:
-        return Icons.cloud_off;
+      case TrackerStatus.loggingIn: return Icons.sync;
+      case TrackerStatus.connected: return Icons.cloud_done;
+      case TrackerStatus.error: return Icons.error;
+      case TrackerStatus.disconnected: return Icons.cloud_off;
     }
   }
 
@@ -130,7 +112,6 @@ class TrackerProvider extends ChangeNotifier {
     await _loadConfig();
     _setupListeners();
     
-    // Gera IMEI se não tiver
     if (_config.imei.isEmpty) {
       print('[TRACKER_PROVIDER] Gerando IMEI inicial');
       generateNewIMEI();
@@ -151,7 +132,7 @@ class TrackerProvider extends ChangeNotifier {
     );
     print('[TRACKER_PROVIDER] Listener de eventos configurado');
     
-    // Comandos do servidor
+    // Comandos do servidor - AGORA USANDO GT06Command
     _clientCommandSub = _gt06Client.commandStream.listen(
       _onServerCommand,
       onError: (e) => print('[TRACKER_PROVIDER] Erro no commandStream: $e'),
@@ -180,9 +161,7 @@ class TrackerProvider extends ChangeNotifier {
       
       if (json != null) {
         _config = TrackerConfig.fromJson(
-          Map<String, dynamic>.from(
-            jsonDecode(json) as Map,
-          ),
+          Map<String, dynamic>.from(jsonDecode(json) as Map),
         );
         print('[TRACKER_PROVIDER] Config carregada: IMEI=${_config.imei}');
       }
@@ -235,7 +214,6 @@ class TrackerProvider extends ChangeNotifier {
     print('[TRACKER_PROVIDER] connect() chamado');
     print('[TRACKER_PROVIDER] Status atual: $_status');
     
-    // Evita múltiplas conexões simultâneas
     if (_status == TrackerStatus.connecting || 
         _status == TrackerStatus.loggingIn ||
         _status == TrackerStatus.online) {
@@ -277,7 +255,6 @@ class TrackerProvider extends ChangeNotifier {
 
   Future<void> disconnect() async {
     print('[TRACKER_PROVIDER] disconnect() chamado');
-    _stopConnectionTimeoutTimer();
     _stopLocationTimer();
     await _gpsService.stopTracking();
     await _gt06Client.disconnect();
@@ -308,8 +285,6 @@ class TrackerProvider extends ChangeNotifier {
       case ClientEventType.loggingIn:
         print('[TRACKER_PROVIDER] >>> Estado: LOGGING_IN <<<');
         _updateStatus(TrackerStatus.loggingIn);
-        // Inicia timeout para autenticação
-        _startConnectionTimeoutTimer();
         break;
         
       case ClientEventType.loggedIn:
@@ -317,21 +292,18 @@ class TrackerProvider extends ChangeNotifier {
         print('[TRACKER_PROVIDER] ==========================================');
         print('[TRACKER_PROVIDER] = LOGIN ACEITO! DISPOSITIVO ONLINE!      =');
         print('[TRACKER_PROVIDER] ==========================================');
-        _stopConnectionTimeoutTimer();
         _updateStatus(TrackerStatus.online);
         _startLocationTimer();
         break;
         
       case ClientEventType.disconnected:
         print('[TRACKER_PROVIDER] >>> Estado: DISCONNECTED <<<');
-        _stopConnectionTimeoutTimer();
         _updateStatus(TrackerStatus.disconnected);
         _stopLocationTimer();
         break;
         
       case ClientEventType.error:
         print('[TRACKER_PROVIDER] >>> Estado: ERROR <<<');
-        _stopConnectionTimeoutTimer();
         _updateStatus(TrackerStatus.error);
         _addLog(LogType.error, event.message);
         break;
@@ -344,26 +316,6 @@ class TrackerProvider extends ChangeNotifier {
       case ClientEventType.packetReceived:
         _stats.packetsReceived++;
         _addLog(LogType.received, event.message, event.data?['hex']);
-        
-        // VERIFICAÇÃO CRÍTICA: Se recebeu qualquer pacote enquanto está em loggingIn,
-        // assume que o login foi aceito (inclui o pacote de login ack 0x01)
-        if (_status == TrackerStatus.loggingIn) {
-          print('[TRACKER_PROVIDER] >>> RECEBIDO PACOTE ENQUANTO EM LOGGING_IN <<<');
-          print('[TRACKER_PROVIDER] Pacote recebido: ${event.data?['hex'] ?? 'Sem hex'}');
-          
-          // Verifica se é um pacote de login ack (0x01)
-          final hexData = event.data?['hex'] ?? '';
-          if (hexData.contains('78780501')) { // Login ack do protocolo GT06
-            print('[TRACKER_PROVIDER] >>> PACOTE LOGIN ACK DETECTADO! <<<');
-            print('[TRACKER_PROVIDER] >>> ATUALIZANDO PARA ONLINE <<<');
-          } else {
-            print('[TRACKER_PROVIDER] >>> Outro tipo de pacote recebido, assumindo login aceito <<<');
-          }
-          
-          _stopConnectionTimeoutTimer();
-          _updateStatus(TrackerStatus.online);
-          _startLocationTimer();
-        }
         break;
         
       case ClientEventType.heartbeatAck:
@@ -379,7 +331,7 @@ class TrackerProvider extends ChangeNotifier {
       case ClientEventType.commandReceived:
         print('[TRACKER_PROVIDER] >>> Comando recebido no evento! <<<');
         _stats.commandsReceived++;
-        _addLog(LogType.command, event.message, event.data?['command']);
+        _addLog(LogType.command, event.message, event.data?['raw']);
         break;
         
       default:
@@ -391,39 +343,30 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   /// ==========================================================================
-  /// COMANDOS DO SERVIDOR
+  /// COMANDOS DO SERVIDOR - AGORA RECEBENDO GT06Command
   /// ==========================================================================
 
-  void _onServerCommand(String command) {
+  void _onServerCommand(GT06Command command) {
     print('[TRACKER_PROVIDER] ==========================================');
     print('[TRACKER_PROVIDER] >>> COMANDO DO SERVIDOR RECEBIDO <<<');
-    print('[TRACKER_PROVIDER] Comando: "$command"');
+    print('[TRACKER_PROVIDER] Tipo: ${command.commandType}');
+    print('[TRACKER_PROVIDER] Raw: "${command.rawCommand}"');
+    print('[TRACKER_PROVIDER] Arduino: "${command.arduinoCommand}"');
     print('[TRACKER_PROVIDER] Arduino conectado: ${_arduinoService.isConnected}');
     print('[TRACKER_PROVIDER] ==========================================');
     
-    _addLog(LogType.command, 'Comando Traccar: $command');
-    
-    // Se recebeu qualquer comando do servidor enquanto está em loggingIn,
-    // assume que o login foi aceito (o servidor só envia comandos para dispositivos autenticados)
-    if (_status == TrackerStatus.loggingIn) {
-      print('[TRACKER_PROVIDER] >>> COMANDO DO SERVIDOR RECEBIDO ENQUANTO EM LOGGING_IN <<<');
-      print('[TRACKER_PROVIDER] >>> ATUALIZANDO PARA ONLINE <<<');
-      _stopConnectionTimeoutTimer();
-      _updateStatus(TrackerStatus.online);
-      _startLocationTimer();
-    }
+    _addLog(LogType.command, 'Comando Traccar: ${command.commandType}');
     
     // Envia para Arduino se estiver conectado
     if (_arduinoService.isConnected) {
-      final arduinoCmd = _arduinoService.convertTraccarCommand(command);
-      print('[TRACKER_PROVIDER] Convertido para Arduino: "$arduinoCmd"');
-      _addLog(LogType.arduino, 'Convertido: $arduinoCmd');
+      final arduinoCmd = command.arduinoCommand;
+      print('[TRACKER_PROVIDER] Enviando para Arduino: "$arduinoCmd"');
+      _addLog(LogType.arduino, 'Enviando: $arduinoCmd');
       
-      print('[TRACKER_PROVIDER] Enviando para Arduino...');
       _arduinoService.sendCommand(arduinoCmd).then((success) {
         if (success) {
           print('[TRACKER_PROVIDER] >>> Comando enviado ao Arduino com sucesso! <<<');
-          _addLog(LogType.success, 'Enviado ao Arduino: $arduinoCmd');
+          _addLog(LogType.success, 'Arduino: $arduinoCmd - OK');
         } else {
           print('[TRACKER_PROVIDER] >>> FALHA ao enviar comando ao Arduino <<<');
           _addLog(LogType.error, 'Falha ao enviar ao Arduino');
@@ -434,31 +377,6 @@ class TrackerProvider extends ChangeNotifier {
       print('[TRACKER_PROVIDER] Comando não foi enviado ao Arduino');
       _addLog(LogType.warning, 'Arduino não conectado - comando não enviado');
     }
-  }
-
-  /// ==========================================================================
-  /// TIMEOUT DE CONEXÃO
-  /// ==========================================================================
-
-  void _startConnectionTimeoutTimer() {
-    print('[TRACKER_PROVIDER] Iniciando timer de timeout de conexão (10s)');
-    _stopConnectionTimeoutTimer();
-    
-    _connectionTimeoutTimer = Timer(const Duration(seconds: 10), () {
-      print('[TRACKER_PROVIDER] Timeout de autenticação atingido (10s)');
-      if (_status == TrackerStatus.loggingIn) {
-        print('[TRACKER_PROVIDER] >>> Autenticação falhou por timeout <<<');
-        _addLog(LogType.error, 'Timeout de autenticação (10s) - servidor não respondeu');
-        _updateStatus(TrackerStatus.error);
-        _stopLocationTimer();
-      }
-    });
-  }
-
-  void _stopConnectionTimeoutTimer() {
-    print('[TRACKER_PROVIDER] Parando timer de timeout de conexão');
-    _connectionTimeoutTimer?.cancel();
-    _connectionTimeoutTimer = null;
   }
 
   /// ==========================================================================
@@ -483,10 +401,8 @@ class TrackerProvider extends ChangeNotifier {
     print('[TRACKER_PROVIDER] Iniciando timer de localização');
     _stopLocationTimer();
     
-    // Envia posição imediatamente
     _sendCurrentLocation();
     
-    // Configura timer periódico
     _locationTimer = Timer.periodic(
       Duration(seconds: _config.locationInterval),
       (_) => _sendCurrentLocation(),
@@ -501,7 +417,6 @@ class TrackerProvider extends ChangeNotifier {
 
   Future<void> _sendCurrentLocation() async {
     if (_currentPosition == null || !_currentPosition!.isValid) {
-      // Tenta obter posição atual
       final position = await _gpsService.getCurrentPosition();
       if (position == null || !position.isValid) return;
       _currentPosition = position;
@@ -590,7 +505,6 @@ class TrackerProvider extends ChangeNotifier {
     
     _logs.add(entry);
     
-    // Limita tamanho
     if (_logs.length > maxLogs) {
       _logs.removeAt(0);
     }
@@ -637,7 +551,6 @@ class TrackerProvider extends ChangeNotifier {
     _arduinoStateSub?.cancel();
     
     _locationTimer?.cancel();
-    _connectionTimeoutTimer?.cancel();
     
     _gt06Client.dispose();
     _gpsService.dispose();

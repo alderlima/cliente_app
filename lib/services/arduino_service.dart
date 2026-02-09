@@ -12,14 +12,11 @@ import '../models/tracker_state.dart';
 /// Gerencia a comunicação com Arduino via cabo USB-OTG.
 /// Envia comandos recebidos do Traccar para o Arduino.
 /// 
-/// FLUXO DE COMANDOS TRACCAR -> ARDUINO:
-/// 1. Traccar envia comando (pacote 0x80)
-/// 2. GT06Client recebe e parseia o comando
-/// 3. TrackerProvider recebe via commandStream
-/// 4. TrackerProvider chama _onServerCommand
-/// 5. _onServerCommand converte o comando via convertTraccarCommand
-/// 6. Comando convertido é enviado para Arduino via sendCommand
-/// 7. Comando é enviado com \n ao final
+/// COMANDOS SUPORTADOS:
+/// - ENGINE_STOP → Desliga o relé (bloqueia motor)
+/// - ENGINE_RESUME → Liga o relé (libera motor)
+/// - GET_POSITION → Solicita posição GPS
+/// - GET_STATUS → Solicita status do dispositivo
 /// ============================================================================
 
 class ArduinoService {
@@ -69,7 +66,7 @@ class ArduinoService {
       final devices = await UsbSerial.listDevices();
       print('[ARDUINO_SERVICE] ${devices.length} dispositivo(s) encontrado(s)');
       for (var d in devices) {
-        print('[ARDUINO_SERVICE]   - ${d.productName} (${d.manufacturerName})');
+        print('[ARDUINO_SERVICE]   - ${d.productName} (${d.manufacturerName}) - VID:${d.vid} PID:${d.pid}');
       }
       return devices;
     } catch (e) {
@@ -113,9 +110,11 @@ class ArduinoService {
       }
       
       // Configura porta
-      print('[ARDUINO_SERVICE] Configurando porta...');
+      print('[ARDUINO_SERVICE] Configurando porta (DTR, RTS)...');
       await _port!.setDTR(true);
       await _port!.setRTS(true);
+      
+      print('[ARDUINO_SERVICE] Configurando parâmetros: $baudRate, 8N1');
       await _port!.setPortParameters(
         baudRate,
         UsbPort.DATABITS_8,
@@ -253,6 +252,12 @@ class ArduinoService {
 
   /// Envia comando para o Arduino
   /// 
+  /// Comandos suportados:
+  /// - ENGINE_STOP → Desliga o relé (bloqueia motor)
+  /// - ENGINE_RESUME → Liga o relé (libera motor)
+  /// - GET_POSITION → Solicita posição GPS
+  /// - GET_STATUS → Solicita status do dispositivo
+  /// 
   /// O comando é enviado com \n ao final para compatibilidade com
   /// Serial.readStringUntil('\n') no Arduino
   Future<bool> sendCommand(String command) async {
@@ -292,17 +297,21 @@ class ArduinoService {
       print('[ARDUINO_SERVICE] Hex: ${message.codeUnits.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
       
       final data = Uint8List.fromList(utf8.encode(message));
+      final bytesWritten = await _port!.write(data);
       
-      // O método write retorna Future<void>, portanto não atribuímos a uma variável.
-      // Se houver falha na escrita, o catch será acionado.
-      await _port!.write(data);
+      print('[ARDUINO_SERVICE] Bytes escritos: $bytesWritten');
       
-      _commandsSent++;
-      _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
-      _updateState(lastMessage: command, lastMessageTime: DateTime.now());
-      
-      print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
-      return true;
+      if (bytesWritten > 0) {
+        _commandsSent++;
+        _notifyMessage('Enviado: $command', ArduinoMessageType.sent);
+        _updateState(lastMessage: command, lastMessageTime: DateTime.now());
+        print('[ARDUINO_SERVICE] >>> ENVIADO COM SUCESSO! <<<');
+        return true;
+      } else {
+        print('[ARDUINO_SERVICE] ERRO: Nenhum byte escrito!');
+        _notifyMessage('Falha ao escrever na porta', ArduinoMessageType.error);
+        return false;
+      }
       
     } catch (e) {
       print('[ARDUINO_SERVICE] ERRO ao enviar: $e');
@@ -311,23 +320,16 @@ class ArduinoService {
     }
   }
 
+  /// Envia comando para parar o motor (ENGINE_STOP)
+  Future<bool> sendEngineStop() async {
+    print('[ARDUINO_SERVICE] Enviando ENGINE_STOP');
+    return await sendCommand('ENGINE_STOP');
+  }
 
-  /// Envia comando formatado para o Arduino
-  /// 
-  /// Formato: CMD:TIPO:DATA
-  /// Exemplo: CMD:BLOQUEAR
-  /// Exemplo: CMD:POSICAO
-  Future<bool> sendFormattedCommand(String commandType, {String? data}) async {
-    final buffer = StringBuffer();
-    buffer.write('CMD:');
-    buffer.write(commandType.toUpperCase());
-    
-    if (data != null && data.isNotEmpty) {
-      buffer.write(':');
-      buffer.write(data);
-    }
-    
-    return await sendCommand(buffer.toString());
+  /// Envia comando para liberar o motor (ENGINE_RESUME)
+  Future<bool> sendEngineResume() async {
+    print('[ARDUINO_SERVICE] Enviando ENGINE_RESUME');
+    return await sendCommand('ENGINE_RESUME');
   }
 
   /// ==========================================================================
@@ -377,40 +379,41 @@ class ArduinoService {
   }
 
   /// ==========================================================================
-  /// UTILIDADES
+  /// UTILIDADES - Conversão de comandos Traccar
   /// ==========================================================================
 
   /// Converte comando Traccar para comando Arduino
   /// 
   /// Comandos Traccar comuns:
-  /// - "stop" -> CMD:BLOQUEAR (bloqueia motor)
-  /// - "resume" -> CMD:DESBLOQUEAR (libera motor)
-  /// - "where" -> CMD:POSICAO (solicita posição)
-  /// - "reset" -> CMD:REINICIAR (reinicia rastreador)
-  /// - "status" -> CMD:STATUS (solicita status)
-  /// 
-  /// Outros comandos são passados como: CMD:COMANDO_ORIGINAL
+  /// - "Relay,1" → ENGINE_STOP (bloqueia motor)
+  /// - "Relay,0" → ENGINE_RESUME (libera motor)
+  /// - "where", "position", "gps" → GET_POSITION
+  /// - "status" → GET_STATUS
   String convertTraccarCommand(String traccarCommand) {
     print('[ARDUINO_SERVICE] Convertendo comando: "$traccarCommand"');
     
     final upper = traccarCommand.toUpperCase().trim();
     
     // Comandos de bloqueio/desbloqueio de motor
-    if (upper.contains('STOP') || 
+    if (upper.contains('RELAY,1') || 
+        upper.contains('STOP') || 
         upper.contains('CUT') || 
         upper.contains('BLOQUEAR') ||
         upper.contains('BLOCK') ||
-        upper.contains('KILL')) {
-      print('[ARDUINO_SERVICE] Convertido: CMD:BLOQUEAR');
-      return 'CMD:BLOQUEAR';
+        upper.contains('KILL') ||
+        upper.contains('DESLIGAR')) {
+      print('[ARDUINO_SERVICE] Convertido: ENGINE_STOP');
+      return 'ENGINE_STOP';
     } 
-    else if (upper.contains('RESUME') || 
+    else if (upper.contains('RELAY,0') || 
+             upper.contains('RESUME') || 
              upper.contains('RESTORE') || 
              upper.contains('DESBLOQUEAR') ||
              upper.contains('UNBLOCK') ||
-             upper.contains('START')) {
-      print('[ARDUINO_SERVICE] Convertido: CMD:DESBLOQUEAR');
-      return 'CMD:DESBLOQUEAR';
+             upper.contains('START') ||
+             upper.contains('LIGAR')) {
+      print('[ARDUINO_SERVICE] Convertido: ENGINE_RESUME');
+      return 'ENGINE_RESUME';
     } 
     // Comandos de localização
     else if (upper.contains('WHERE') || 
@@ -418,34 +421,20 @@ class ArduinoService {
              upper.contains('POSICAO') ||
              upper.contains('POSITION') ||
              upper.contains('GPS')) {
-      print('[ARDUINO_SERVICE] Convertido: CMD:POSICAO');
-      return 'CMD:POSICAO';
-    } 
-    // Comandos de reinicialização
-    else if (upper.contains('RESET') || 
-             upper.contains('REINICIAR') ||
-             upper.contains('REBOOT') ||
-             upper.contains('RESTART')) {
-      print('[ARDUINO_SERVICE] Convertido: CMD:REINICIAR');
-      return 'CMD:REINICIAR';
+      print('[ARDUINO_SERVICE] Convertido: GET_POSITION');
+      return 'GET_POSITION';
     } 
     // Comandos de status
     else if (upper.contains('STATUS') || 
              upper.contains('ESTADO') ||
              upper.contains('INFO')) {
-      print('[ARDUINO_SERVICE] Convertido: CMD:STATUS');
-      return 'CMD:STATUS';
-    }
-    // Comandos de configuração
-    else if (upper.contains('INTERVAL') || 
-             upper.contains('INTERVALO')) {
-      print('[ARDUINO_SERVICE] Convertido: CMD:INTERVALO');
-      return 'CMD:INTERVALO';
+      print('[ARDUINO_SERVICE] Convertido: GET_STATUS');
+      return 'GET_STATUS';
     }
     
     // Se não reconheceu, passa o comando original
-    print('[ARDUINO_SERVICE] Convertido: CMD:$traccarCommand');
-    return 'CMD:$traccarCommand';
+    print('[ARDUINO_SERVICE] Convertido: $traccarCommand (original)');
+    return traccarCommand;
   }
 
   /// Libera recursos

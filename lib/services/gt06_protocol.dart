@@ -2,16 +2,16 @@ import 'dart:typed_data';
 import 'dart:convert';
 
 /// ============================================================================
-/// PROTOCOLO GT06 COMPLETO - Implementação Cliente
+/// PROTOCOLO GT06 - Implementação Cliente
 /// ============================================================================
 /// 
 /// Protocolo Concox GT06 para rastreadores GPS
-/// Documentação baseada nas especificações oficiais
 ///
 /// ESTRUTURA DO PACOTE:
-/// [Start: 0x78 0x78] [Length: 1] [Protocol: 1] [Info: n] [Serial: 2] [CRC: 1] [Stop: 0x0D 0x0A]
+/// [Start: 0x78 0x78] [Length: 1] [Protocol: 1] [Info: n] [Serial: 2] [CRC: 2] [Stop: 0x0D 0x0A]
 ///
 /// Length = tamanho de (Protocol + Info + Serial)
+/// CRC16 X.25 (do Length até o final do Serial)
 /// ============================================================================
 
 class GT06Protocol {
@@ -25,7 +25,7 @@ class GT06Protocol {
   static const int PROTOCOL_STATUS = 0x13;  // Heartbeat
   static const int PROTOCOL_STRING = 0x15;
   static const int PROTOCOL_ALARM = 0x16;
-  static const int PROTOCOL_COMMAND = 0x80;  // Server -> Client
+  static const int PROTOCOL_COMMAND = 0x80;  // Server -> Client (Comando)
   static const int PROTOCOL_COMMAND_RESPONSE = 0x21;  // Client -> Server
   static const int PROTOCOL_TIME_REQUEST = 0x32;
   static const int PROTOCOL_INFO = 0x98;
@@ -59,8 +59,6 @@ class GT06Protocol {
   /// ==========================================================================
 
   /// Cria pacote de LOGIN (0x01)
-  /// 
-  /// Estrutura: [Start][Len][0x01][IMEI BCD 8bytes][Serial][Checksum][Stop]
   Uint8List createLoginPacket(String imei) {
     final builder = BytesBuilder();
     
@@ -91,40 +89,28 @@ class GT06Protocol {
   }
 
   /// Cria pacote de HEARTBEAT (0x13)
-  /// 
-  /// Estrutura: [Start][Len][0x13][TerminalInfo][Voltage][GSM][AlarmLang][Serial][Checksum][Stop]
   Uint8List createHeartbeatPacket({
     bool accOn = true,
     bool gpsPositioned = true,
-    int voltageLevel = 4,  // 0-6
-    int gsmSignal = 4,     // 0-4
-    int alarmType = 0,     // 0 = normal
+    int voltageLevel = 4,
+    int gsmSignal = 4,
+    int alarmType = 0,
   }) {
     final builder = BytesBuilder();
     
-    // Start bytes
     builder.add(START_BYTES);
-    
-    // Content length (protocol + terminal + voltage + gsm + alarm + serial = 1+1+1+1+2+2 = 8)
-    builder.addByte(0x08);
-    
-    // Protocol number
+    builder.addByte(0x08); // Content length
     builder.addByte(PROTOCOL_STATUS);
     
-    // Terminal Info (1 byte)
+    // Terminal Info
     int terminalInfo = 0x00;
     if (accOn) terminalInfo |= 0x01;
     if (gpsPositioned) terminalInfo |= 0x02;
-    terminalInfo |= 0x40;  // GPS real-time
+    terminalInfo |= 0x40;
     builder.addByte(terminalInfo);
     
-    // Voltage level (1 byte)
     builder.addByte(voltageLevel.clamp(0, 6));
-    
-    // GSM signal (1 byte)
     builder.addByte(gsmSignal.clamp(0, 4));
-    
-    // Alarm/Language (2 bytes)
     builder.add([alarmType & 0xFF, 0x00]);
     
     // Serial number
@@ -134,15 +120,12 @@ class GT06Protocol {
     final checksum = _calculateChecksum(builder.toBytes().sublist(2));
     builder.addByte(checksum);
     
-    // Stop bytes
     builder.add(STOP_BYTES);
     
     return Uint8List.fromList(builder.toBytes());
   }
 
   /// Cria pacote de LOCATION/GPS (0x12)
-  /// 
-  /// Estrutura completa com data, coordenadas, velocidade e curso
   Uint8List createLocationPacket({
     required double latitude,
     required double longitude,
@@ -156,14 +139,8 @@ class GT06Protocol {
     
     final builder = BytesBuilder();
     
-    // Start bytes
     builder.add(START_BYTES);
-    
-    // Content length (protocol + datetime + satellites + lat + lon + speed + course_status + serial)
-    // = 1 + 6 + 1 + 4 + 4 + 1 + 2 + 2 = 21
-    builder.addByte(0x15);
-    
-    // Protocol number
+    builder.addByte(0x15); // Content length
     builder.addByte(PROTOCOL_LOCATION);
     
     // Date/Time (6 bytes): YY MM DD HH MM SS
@@ -174,25 +151,23 @@ class GT06Protocol {
     builder.addByte(dateTime.minute);
     builder.addByte(dateTime.second);
     
-    // GPS Count (1 byte) - número de satélites
     builder.addByte(satellites);
     
-    // Latitude (4 bytes) - graus * 30000 * 60
+    // Latitude
     final latValue = (_coordinateToGT06(latitude)).toInt();
     builder.add(_intToBytes(latValue, 4));
     
-    // Longitude (4 bytes)
+    // Longitude
     final lonValue = (_coordinateToGT06(longitude)).toInt();
     builder.add(_intToBytes(lonValue, 4));
     
-    // Speed (1 byte) - km/h
     builder.addByte(speed.clamp(0, 255).toInt());
     
-    // Course/Status (2 bytes)
+    // Course/Status
     int courseStatus = ((course ~/ 10) & 0x03FF);
-    if (gpsValid) courseStatus |= 0x1000;  // GPS valid bit
-    if (latitude < 0) courseStatus |= 0x0400;  // South
-    if (longitude < 0) courseStatus |= 0x0800;  // West
+    if (gpsValid) courseStatus |= 0x1000;
+    if (latitude < 0) courseStatus |= 0x0400;
+    if (longitude < 0) courseStatus |= 0x0800;
     builder.add(_intToBytes(courseStatus, 2));
     
     // Serial number
@@ -202,7 +177,6 @@ class GT06Protocol {
     final checksum = _calculateChecksum(builder.toBytes().sublist(2));
     builder.addByte(checksum);
     
-    // Stop bytes
     builder.add(STOP_BYTES);
     
     return Uint8List.fromList(builder.toBytes());
@@ -221,16 +195,11 @@ class GT06Protocol {
     
     final builder = BytesBuilder();
     
-    // Start bytes
     builder.add(START_BYTES);
-    
-    // Content length
-    builder.addByte(0x19);  // 25 bytes
-    
-    // Protocol number
+    builder.addByte(0x19);
     builder.addByte(PROTOCOL_ALARM);
     
-    // Date/Time (6 bytes)
+    // Date/Time
     builder.addByte(dateTime.year - 2000);
     builder.addByte(dateTime.month);
     builder.addByte(dateTime.day);
@@ -238,38 +207,27 @@ class GT06Protocol {
     builder.addByte(dateTime.minute);
     builder.addByte(dateTime.second);
     
-    // Alarm type (1 byte)
     builder.addByte(alarmType);
-    
-    // GPS Count
     builder.addByte(8);
     
-    // Latitude
     final latValue = (_coordinateToGT06(latitude)).toInt();
     builder.add(_intToBytes(latValue, 4));
     
-    // Longitude
     final lonValue = (_coordinateToGT06(longitude)).toInt();
     builder.add(_intToBytes(lonValue, 4));
     
-    // Speed
     builder.addByte(speed.clamp(0, 255).toInt());
     
-    // Course/Status
     int courseStatus = ((course ~/ 10) & 0x03FF) | 0x1000;
     builder.add(_intToBytes(courseStatus, 2));
     
-    // Alarm Status (4 bytes)
     builder.add([0x00, 0x00, 0x00, 0x00]);
     
-    // Serial number
     builder.add(_intToBytes(nextSerialNumber, 2));
     
-    // Checksum
     final checksum = _calculateChecksum(builder.toBytes().sublist(2));
     builder.addByte(checksum);
     
-    // Stop bytes
     builder.add(STOP_BYTES);
     
     return Uint8List.fromList(builder.toBytes());
@@ -280,35 +238,18 @@ class GT06Protocol {
     final textBytes = utf8.encode(responseText);
     final builder = BytesBuilder();
     
-    // Start bytes
     builder.add(START_BYTES);
-    
-    // Content length
     builder.addByte(5 + textBytes.length);
-    
-    // Protocol number
     builder.addByte(PROTOCOL_COMMAND_RESPONSE);
-    
-    // Server flag (1 byte)
-    builder.addByte(0x00);
-    
-    // Command type (1 byte) - 0x01 = texto
-    builder.addByte(0x01);
-    
-    // Command length (2 bytes, big-endian)
+    builder.addByte(0x00); // Server flag
+    builder.addByte(0x01); // Command type = texto
     builder.add(_intToBytes(textBytes.length, 2));
-    
-    // Command text
     builder.add(textBytes);
-    
-    // Serial number
     builder.add(_intToBytes(nextSerialNumber, 2));
     
-    // Checksum
     final checksum = _calculateChecksum(builder.toBytes().sublist(2));
     builder.addByte(checksum);
     
-    // Stop bytes
     builder.add(STOP_BYTES);
     
     return Uint8List.fromList(builder.toBytes());
@@ -319,11 +260,9 @@ class GT06Protocol {
   /// ==========================================================================
 
   /// Parse de pacote recebido do servidor
-  /// 
-  /// Estrutura: [0x78 0x78] [Len] [Protocol] [Info] [Serial:2] [CRC] [0x0D 0x0A]
   GT06ServerPacket? parseServerPacket(Uint8List data) {
     try {
-      // Verifica tamanho mínimo (start + len + protocol + serial + crc + stop = 2+1+1+2+1+2 = 9)
+      // Verifica tamanho mínimo
       if (data.length < 9) {
         print('[GT06_PROTOCOL] Pacote muito curto: ${data.length} bytes');
         return null;
@@ -343,8 +282,8 @@ class GT06Protocol {
         return null;
       }
       
-      if (startIndex + 2 >= data.length) {
-        print('[GT06_PROTOCOL] Dados insuficientes após start bytes');
+      if (startIndex + 3 >= data.length) {
+        print('[GT06_PROTOCOL] Dados insuficientes');
         return null;
       }
       
@@ -352,8 +291,8 @@ class GT06Protocol {
       int contentLength = data[startIndex + 2];
       
       // Calcula tamanho total do pacote
-      // start(2) + len(1) + content(contentLength) + crc(1) + stop(2)
-      int packetLength = 2 + 1 + contentLength + 1 + 2;
+      // start(2) + len(1) + content(contentLength) + crc(2) + stop(2)
+      int packetLength = 2 + 1 + contentLength + 2 + 2;
       
       print('[GT06_PROTOCOL] Start: $startIndex, ContentLen: $contentLength, PacketLen: $packetLength, DataLen: ${data.length}');
       
@@ -368,23 +307,15 @@ class GT06Protocol {
       // Verifica stop bytes
       if (packet[packet.length - 2] != STOP_BYTES[0] || 
           packet[packet.length - 1] != STOP_BYTES[1]) {
-        print('[GT06_PROTOCOL] Stop bytes inválidos: ${bytesToHex(packet.sublist(packet.length - 2))}');
+        print('[GT06_PROTOCOL] Stop bytes inválidos');
         return null;
       }
       
       // Extrai campos
-      // Byte 0-1: Start bytes
-      // Byte 2: Content length
-      // Byte 3: Protocol number
-      // Bytes 4 até (4 + contentLength - 3): Info (exclui serial de 2 bytes no final do content)
-      // Bytes (3 + contentLength - 1) até (3 + contentLength): Serial number (2 bytes)
-      // Byte (3 + contentLength): Checksum
-      // Últimos 2 bytes: Stop bytes
-      
       int protocolNumber = packet[3];
       
       // Info = content sem o protocol (1 byte) e sem o serial (2 bytes)
-      int infoLength = contentLength - 3; // -1 protocol -2 serial
+      int infoLength = contentLength - 3;
       Uint8List info;
       if (infoLength > 0) {
         info = packet.sublist(4, 4 + infoLength);
@@ -392,19 +323,19 @@ class GT06Protocol {
         info = Uint8List(0);
       }
       
-      // Serial number está nos últimos 2 bytes do content (antes do CRC)
-      int serialIndex = 3 + contentLength - 1; // índice do primeiro byte do serial
+      // Serial number (2 bytes antes do CRC)
+      int serialIndex = 2 + contentLength - 1;
       int serialNumber = (packet[serialIndex] << 8) | packet[serialIndex + 1];
       
-      // Verifica checksum (XOR de tudo entre len e serial, inclusive)
+      // Verifica CRC (XOR simples para GT06)
       int expectedChecksum = packet[packet.length - 3];
-      Uint8List contentForChecksum = packet.sublist(2, packet.length - 3); // do len até o final do serial
+      Uint8List contentForChecksum = packet.sublist(2, packet.length - 3);
       int calculatedChecksum = _calculateChecksum(contentForChecksum);
       
       bool checksumValid = expectedChecksum == calculatedChecksum;
       
       print('[GT06_PROTOCOL] Protocol: 0x${protocolNumber.toRadixString(16).padLeft(2, "0")}, '
-            'Serial: $serialNumber, Checksum: $checksumValid (expected: $expectedChecksum, calc: $calculatedChecksum)');
+            'Serial: $serialNumber, InfoLen: $infoLength, CRC: $checksumValid');
       
       return GT06ServerPacket(
         protocolNumber: protocolNumber,
@@ -423,40 +354,55 @@ class GT06Protocol {
 
   /// Parse de comando do servidor (0x80)
   /// 
-  /// Estrutura do comando no pacote 0x80:
-  /// [Flag: 1] [CommandType: 1] [CommandLength: 2] [CommandData: n]
-  String? parseCommand(GT06ServerPacket packet) {
+  /// O Traccar envia comandos no formato de texto dentro do payload.
+  /// Comandos comuns:
+  /// - "Relay,1" → Parar motor (ENGINE_STOP)
+  /// - "Relay,0" → Liberar motor (ENGINE_RESUME)
+  GT06Command? parseCommand(GT06ServerPacket packet) {
     if (packet.protocolNumber != PROTOCOL_COMMAND) {
-      print('[GT06_PROTOCOL] Não é pacote de comando (protocol: 0x${packet.protocolNumber.toRadixString(16)})');
       return null;
     }
     
     try {
-      print('[GT06_PROTOCOL] Parse comando - content length: ${packet.content.length}');
-      print('[GT06_PROTOCOL] Content hex: ${bytesToHex(packet.content)}');
+      print('[GT06_PROTOCOL] Parse comando - content: ${bytesToHex(packet.content)}');
       
-      // Estrutura: [Flag][Type][LenHi][LenLo][Command...]
-      if (packet.content.length < 4) {
-        print('[GT06_PROTOCOL] Content muito curto para comando');
+      // Limpa bytes nulos do payload
+      final cleanBytes = packet.content.where((b) => b != 0).toList();
+      
+      if (cleanBytes.isEmpty) {
+        print('[GT06_PROTOCOL] Payload vazio após limpeza');
         return null;
       }
       
-      int flag = packet.content[0];
-      int commandType = packet.content[1];
-      int commandLength = (packet.content[2] << 8) | packet.content[3];
+      // Decodifica como ASCII
+      String text = ascii.decode(Uint8List.fromList(cleanBytes), allowInvalid: true);
+      text = text.trim();
       
-      print('[GT06_PROTOCOL] Flag: $flag, Type: $commandType, CmdLen: $commandLength');
+      print('[GT06_PROTOCOL] Texto do comando: "$text"');
       
-      if (packet.content.length < 4 + commandLength) {
-        print('[GT06_PROTOCOL] Content menor que comando esperado');
-        return null;
+      // Detecta tipo de comando
+      String commandType;
+      String rawCommand = text;
+      
+      if (text.contains('Relay,1') || text.toUpperCase().contains('STOP')) {
+        commandType = 'ENGINE_STOP';
+      } else if (text.contains('Relay,0') || text.toUpperCase().contains('RESUME')) {
+        commandType = 'ENGINE_RESUME';
+      } else if (text.toUpperCase().contains('WHERE') || text.toUpperCase().contains('POSITION')) {
+        commandType = 'POSITION';
+      } else if (text.toUpperCase().contains('STATUS')) {
+        commandType = 'STATUS';
+      } else {
+        commandType = 'UNKNOWN';
       }
       
-      Uint8List commandBytes = packet.content.sublist(4, 4 + commandLength);
-      String command = utf8.decode(commandBytes);
+      print('[GT06_PROTOCOL] Tipo detectado: $commandType');
       
-      print('[GT06_PROTOCOL] Comando parseado: "$command"');
-      return command;
+      return GT06Command(
+        rawCommand: rawCommand,
+        commandType: commandType,
+        serialNumber: packet.serialNumber,
+      );
       
     } catch (e, stackTrace) {
       print('[GT06_PROTOCOL] Erro no parse de comando: $e');
@@ -477,18 +423,17 @@ class GT06Protocol {
       throw Exception('IMEI deve ter 15 dígitos');
     }
     
-    // GT06 usa 16 dígitos em BCD (padding à esquerda)
-    final padded = '0$cleanImei'; // agora tem 16 dígitos
+    final padded = '0$cleanImei';
     
     final bytes = <int>[];
     
     for (int i = 0; i < padded.length; i += 2) {
-      final high = padded.codeUnitAt(i) - 0x30;     // primeiro dígito
-      final low = padded.codeUnitAt(i + 1) - 0x30;  // segundo dígito
+      final high = padded.codeUnitAt(i) - 0x30;
+      final low = padded.codeUnitAt(i + 1) - 0x30;
       bytes.add((high << 4) | low);
     }
     
-    return Uint8List.fromList(bytes); // 8 bytes certinho
+    return Uint8List.fromList(bytes);
   }
 
   /// Converte coordenada para formato GT06
@@ -518,15 +463,12 @@ class GT06Protocol {
   static String generateRandomIMEI() {
     final buffer = StringBuffer();
     
-    // TAC (8 dígitos) - prefixo comum de rastreadores
     buffer.write('35963208');
     
-    // Serial (6 dígitos aleatórios)
     for (int i = 0; i < 6; i++) {
       buffer.write((DateTime.now().millisecond + i) % 10);
     }
     
-    // Calcula dígito verificador (Luhn)
     String imei14 = buffer.toString();
     int sum = 0;
     bool doubleDigit = false;
@@ -556,7 +498,7 @@ class GT06Protocol {
 /// Pacote recebido do servidor
 class GT06ServerPacket {
   final int protocolNumber;
-  final Uint8List content;  // Info bytes (sem protocol e sem serial)
+  final Uint8List content;
   final int serialNumber;
   final bool checksumValid;
   final Uint8List rawData;
@@ -579,4 +521,36 @@ class GT06ServerPacket {
       default: return 'UNKNOWN(0x${protocolNumber.toRadixString(16)})';
     }
   }
+}
+
+/// Comando parseado do Traccar
+class GT06Command {
+  final String rawCommand;
+  final String commandType;
+  final int serialNumber;
+
+  GT06Command({
+    required this.rawCommand,
+    required this.commandType,
+    required this.serialNumber,
+  });
+
+  /// Retorna o comando para enviar ao Arduino
+  String get arduinoCommand {
+    switch (commandType) {
+      case 'ENGINE_STOP':
+        return 'ENGINE_STOP';
+      case 'ENGINE_RESUME':
+        return 'ENGINE_RESUME';
+      case 'POSITION':
+        return 'GET_POSITION';
+      case 'STATUS':
+        return 'GET_STATUS';
+      default:
+        return 'UNKNOWN:$rawCommand';
+    }
+  }
+
+  @override
+  String toString() => 'GT06Command(type: $commandType, raw: "$rawCommand")';
 }

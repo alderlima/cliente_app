@@ -16,7 +16,7 @@ import 'gt06_protocol.dart';
 /// 3. Aguardar LOGIN_ACK (0x01)
 /// 4. Iniciar heartbeat periódico
 /// 5. Enviar posições GPS
-/// 6. Receber e responder comandos (0x80)
+/// 6. Receber comandos (0x80) e repassar para Arduino
 /// ============================================================================
 
 class GT06Client {
@@ -42,7 +42,7 @@ class GT06Client {
   
   // Stream controllers
   final StreamController<ClientEvent> _eventController = StreamController<ClientEvent>.broadcast();
-  final StreamController<String> _commandController = StreamController<String>.broadcast();
+  final StreamController<GT06Command> _commandController = StreamController<GT06Command>.broadcast();
   final StreamController<Uint8List> _rawDataController = StreamController<Uint8List>.broadcast();
   
   // Getters
@@ -54,7 +54,7 @@ class GT06Client {
   
   // Streams
   Stream<ClientEvent> get eventStream => _eventController.stream;
-  Stream<String> get commandStream => _commandController.stream;
+  Stream<GT06Command> get commandStream => _commandController.stream;
   Stream<Uint8List> get rawDataStream => _rawDataController.stream;
 
   /// ==========================================================================
@@ -208,12 +208,26 @@ class GT06Client {
     await _sendPacket(packet, 'ALARM');
   }
 
-  /// Envia resposta de comando
-  Future<void> sendCommandResponse(String response) async {
+  /// Envia ACK de comando (0x80)
+  Future<void> sendCommandAck(int serialNumber) async {
     if (!_isConnected) return;
     
-    final packet = _protocol.createCommandResponse(response);
-    await _sendPacket(packet, 'CMD_RESPONSE');
+    // Para ACK de comando, enviamos pacote vazio com o mesmo serial
+    final builder = BytesBuilder();
+    builder.add(GT06Protocol.START_BYTES);
+    builder.addByte(0x05); // Length: protocol(1) + serial(2) + crc(2) = 5? Não, é 1+2=3, +2 crc no final
+    // Na verdade o GT06 usa: length = protocol + content + serial
+    // Para ACK: protocol(1) + content(0) + serial(2) = 3
+    builder.addByte(0x03); // Length
+    builder.addByte(GT06Protocol.PROTOCOL_COMMAND); // 0x80
+    builder.add(_intToBytes(serialNumber, 2));
+    
+    final checksum = _calculateChecksum(builder.toBytes().sublist(2));
+    builder.addByte(checksum);
+    builder.add(GT06Protocol.STOP_BYTES);
+    
+    final packet = Uint8List.fromList(builder.toBytes());
+    await _sendPacket(packet, 'CMD_ACK');
   }
 
   /// Envia pacote genérico
@@ -265,7 +279,7 @@ class GT06Client {
   void _processReceiveBuffer() {
     print('[GT06_CLIENT] Processando buffer: ${_receiveBuffer.length} bytes');
     
-    while (_receiveBuffer.length >= 9) {  // Mínimo: start(2) + len(1) + protocol(1) + serial(2) + crc(1) + stop(2) = 9
+    while (_receiveBuffer.length >= 9) {
       // Procura start bytes
       int startIndex = -1;
       for (int i = 0; i < _receiveBuffer.length - 1; i++) {
@@ -284,22 +298,19 @@ class GT06Client {
       
       // Remove lixo antes do start
       if (startIndex > 0) {
-        print('[GT06_CLIENT] Removendo $startIndex bytes de lixo antes do start');
+        print('[GT06_CLIENT] Removendo $startIndex bytes de lixo');
         _receiveBuffer.removeRange(0, startIndex);
       }
       
-      if (_receiveBuffer.length < 3) {
-        print('[GT06_CLIENT] Buffer muito curto após limpeza');
-        return;
-      }
+      if (_receiveBuffer.length < 3) return;
       
       int contentLength = _receiveBuffer[2];
-      int packetLength = 2 + 1 + contentLength + 1 + 2; // start + len + content + crc + stop
+      int packetLength = 2 + 1 + contentLength + 2 + 2; // start + len + content + crc + stop
       
-      print('[GT06_CLIENT] Content length: $contentLength, Packet length: $packetLength, Buffer: ${_receiveBuffer.length}');
+      print('[GT06_CLIENT] Content length: $contentLength, Packet length: $packetLength');
       
       if (_receiveBuffer.length < packetLength) {
-        print('[GT06_CLIENT] Pacote incompleto, aguardando mais dados');
+        print('[GT06_CLIENT] Pacote incompleto, aguardando...');
         return;
       }
       
@@ -320,13 +331,12 @@ class GT06Client {
     final parsed = _protocol.parseServerPacket(packet);
     
     if (parsed == null) {
-      print('[GT06_CLIENT] Pacote inválido ou não parseado');
+      print('[GT06_CLIENT] Pacote inválido');
       _notifyEvent(ClientEventType.warning, 'Pacote inválido recebido');
       return;
     }
     
-    print('[GT06_CLIENT] Pacote parseado: ${parsed.protocolName} (0x${parsed.protocolNumber.toRadixString(16)})');
-    print('[GT06_CLIENT] Serial: ${parsed.serialNumber}, Checksum válido: ${parsed.checksumValid}');
+    print('[GT06_CLIENT] Pacote: ${parsed.protocolName} (0x${parsed.protocolNumber.toRadixString(16)})');
     
     _notifyEvent(
       ClientEventType.packetReceived,
@@ -373,8 +383,8 @@ class GT06Client {
     _notifyEvent(ClientEventType.loggedIn, 'Login aceito pelo servidor!');
     print('[GT06_CLIENT] Estado: _isLoggedIn = true');
     
-    // Inicia heartbeat automático após login bem-sucedido
-    print('[GT06_CLIENT] Iniciando heartbeat automático (${_heartbeatInterval}s)');
+    // Inicia heartbeat automático
+    print('[GT06_CLIENT] Iniciando heartbeat (${_heartbeatInterval}s)');
     startHeartbeat(_heartbeatInterval);
   }
 
@@ -390,31 +400,46 @@ class GT06Client {
     _notifyEvent(ClientEventType.locationAck, 'Posição confirmada');
   }
 
-  /// Manipula comando do servidor
+  /// Manipula comando do servidor (0x80)
   void _handleCommand(GT06ServerPacket packet) {
-    print('[GT06_CLIENT] >>> Processando COMANDO (0x80) <<<');
+    print('[GT06_CLIENT] ==========================================');
+    print('[GT06_CLIENT] >>> PROCESSANDO COMANDO (0x80) <<<');
+    print('[GT06_CLIENT] Serial: ${packet.serialNumber}');
+    print('[GT06_CLIENT] Content: ${GT06Protocol.bytesToHex(packet.content)}');
+    
     final command = _protocol.parseCommand(packet);
     
-    print('[GT06_CLIENT] Comando extraído: ${command ?? "(null)"}');
-    
-    if (command != null && command.isNotEmpty) {
-      print('[GT06_CLIENT] >>> Enviando comando para stream: "$command" <<<');
+    if (command != null) {
+      print('[GT06_CLIENT] >>> COMANDO PARSEADO <<<');
+      print('[GT06_CLIENT] Tipo: ${command.commandType}');
+      print('[GT06_CLIENT] Raw: "${command.rawCommand}"');
+      print('[GT06_CLIENT] Arduino: "${command.arduinoCommand}"');
+      
       _notifyEvent(
         ClientEventType.commandReceived,
-        'Comando recebido: $command',
-        data: {'command': command},
+        'Comando: ${command.commandType}',
+        data: {
+          'raw': command.rawCommand,
+          'type': command.commandType,
+          'arduino': command.arduinoCommand,
+        },
       );
       
       // Adiciona ao stream de comandos
       _commandController.add(command);
-      print('[GT06_CLIENT] Comando adicionado ao commandStream');
+      print('[GT06_CLIENT] Comando adicionado ao stream');
       
-      // Envia ACK
-      print('[GT06_CLIENT] Enviando resposta de comando');
-      sendCommandResponse('CMD OK');
+      // Envia ACK para o Traccar
+      print('[GT06_CLIENT] Enviando ACK do comando...');
+      sendCommandAck(packet.serialNumber);
+      
     } else {
-      print('[GT06_CLIENT] Comando vazio ou nulo, ignorando');
+      print('[GT06_CLIENT] Não foi possível parsear o comando');
+      // Mesmo assim envia ACK
+      sendCommandAck(packet.serialNumber);
     }
+    
+    print('[GT06_CLIENT] ==========================================');
   }
 
   /// Manipula ACK de comando
@@ -456,7 +481,7 @@ class GT06Client {
 
   /// Inicia heartbeat periódico
   void startHeartbeat(int intervalSeconds) {
-    print('[GT06_CLIENT] Configurando timer de heartbeat: ${intervalSeconds}s');
+    print('[GT06_CLIENT] Configurando heartbeat: ${intervalSeconds}s');
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(
       Duration(seconds: intervalSeconds),
@@ -466,7 +491,7 @@ class GT06Client {
       },
     );
     
-    // Envia heartbeat imediatamente também
+    // Envia heartbeat imediatamente
     print('[GT06_CLIENT] Enviando heartbeat inicial');
     sendHeartbeat();
   }
@@ -518,6 +543,23 @@ class GT06Client {
     _eventController.close();
     _commandController.close();
     _rawDataController.close();
+  }
+  
+  /// Helpers
+  Uint8List _intToBytes(int value, int length) {
+    final bytes = <int>[];
+    for (int i = length - 1; i >= 0; i--) {
+      bytes.add((value >> (i * 8)) & 0xFF);
+    }
+    return Uint8List.fromList(bytes);
+  }
+  
+  int _calculateChecksum(Uint8List data) {
+    int checksum = 0;
+    for (int byte in data) {
+      checksum ^= byte;
+    }
+    return checksum;
   }
 }
 
