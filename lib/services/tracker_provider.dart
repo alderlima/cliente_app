@@ -343,7 +343,7 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   /// ==========================================================================
-  /// COMANDOS DO SERVIDOR - AGORA RECEBENDO GT06Command
+  /// COMANDOS DO SERVIDOR - IGUAL AO EXEMPLO PYTHON
   /// ==========================================================================
 
   void _onServerCommand(GT06Command command) {
@@ -355,27 +355,88 @@ class TrackerProvider extends ChangeNotifier {
     print('[TRACKER_PROVIDER] Arduino conectado: ${_arduinoService.isConnected}');
     print('[TRACKER_PROVIDER] ==========================================');
     
-    _addLog(LogType.command, 'Comando Traccar: ${command.commandType}');
+    _addLog(LogType.command, 'Comando Traccar: ${command.rawCommand}');
     
-    // Envia para Arduino se estiver conectado
-    if (_arduinoService.isConnected) {
-      final arduinoCmd = command.arduinoCommand;
-      print('[TRACKER_PROVIDER] Enviando para Arduino: "$arduinoCmd"');
-      _addLog(LogType.arduino, 'Enviando: $arduinoCmd');
+    // Verifica se é comando Relay igual ao Python
+    if (command.rawCommand.contains("Relay")) {
+      print('[TRACKER_PROVIDER] >>> Comando Relay detectado! <<<');
+      print('[TRACKER_PROVIDER] Texto: "${command.rawCommand}"');
       
-      _arduinoService.sendCommand(arduinoCmd).then((success) {
-        if (success) {
-          print('[TRACKER_PROVIDER] >>> Comando enviado ao Arduino com sucesso! <<<');
-          _addLog(LogType.success, 'Arduino: $arduinoCmd - OK');
-        } else {
-          print('[TRACKER_PROVIDER] >>> FALHA ao enviar comando ao Arduino <<<');
-          _addLog(LogType.error, 'Falha ao enviar ao Arduino');
-        }
-      });
+      String arduinoCmd;
+      if (command.rawCommand.contains("Relay,1")) {
+        arduinoCmd = "ENGINE_STOP";
+        print('[TRACKER_PROVIDER] ENGINE_STOP');
+      } else if (command.rawCommand.contains("Relay,0")) {
+        arduinoCmd = "ENGINE_RESUME";
+        print('[TRACKER_PROVIDER] ENGINE_RESUME');
+      } else {
+        print('[TRACKER_PROVIDER] Relay desconhecido');
+        arduinoCmd = command.rawCommand;
+      }
+      
+      // Envia para Arduino se estiver conectado
+      _sendToArduinoWithRetry(arduinoCmd, command.rawCommand);
     } else {
-      print('[TRACKER_PROVIDER] >>> ARDUINO NÃO CONECTADO! <<<');
-      print('[TRACKER_PROVIDER] Comando não foi enviado ao Arduino');
-      _addLog(LogType.warning, 'Arduino não conectado - comando não enviado');
+      print('[TRACKER_PROVIDER] Comando não é Relay, ignorando');
+      _addLog(LogType.info, 'Comando não Relay ignorado: ${command.rawCommand}');
+    }
+  }
+
+  /// Envia comando para Arduino com tentativa de reconexão
+  Future<void> _sendToArduinoWithRetry(String arduinoCmd, String originalCmd) async {
+    print('[TRACKER_PROVIDER] ==========================================');
+    print('[TRACKER_PROVIDER] >>> ENVIANDO PARA ARDUINO <<<');
+    print('[TRACKER_PROVIDER] Comando: $arduinoCmd');
+    print('[TRACKER_PROVIDER] Arduino conectado: ${_arduinoService.isConnected}');
+    print('[TRACKER_PROVIDER] ==========================================');
+    
+    if (!_arduinoService.isConnected) {
+      print('[TRACKER_PROVIDER] Arduino não conectado, tentando conectar...');
+      _addLog(LogType.warning, 'Arduino desconectado, tentando conectar...');
+      
+      final connected = await _arduinoService.autoConnect();
+      
+      if (!connected) {
+        print('[TRACKER_PROVIDER] Falha ao conectar Arduino');
+        _addLog(LogType.error, 'Falha ao conectar Arduino - comando perdido: $arduinoCmd');
+        return;
+      }
+      
+      // Aguarda um pouco para estabilizar conexão
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    
+    // Envia comando
+    print('[TRACKER_PROVIDER] Enviando comando para Arduino: $arduinoCmd');
+    final success = await _arduinoService.sendCommand(arduinoCmd);
+    
+    if (success) {
+      print('[TRACKER_PROVIDER] >>> COMANDO ENVIADO COM SUCESSO! <<<');
+      _addLog(LogType.success, 'Arduino: $arduinoCmd - OK');
+    } else {
+      print('[TRACKER_PROVIDER] >>> FALHA AO ENVIAR COMANDO <<<');
+      _addLog(LogType.error, 'Falha ao enviar para Arduino: $arduinoCmd');
+      
+      // Tenta reconectar e enviar novamente
+      print('[TRACKER_PROVIDER] Tentando reconectar e reenviar...');
+      await Future.delayed(const Duration(seconds: 1));
+      
+      await _arduinoService.disconnect();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      final reconnected = await _arduinoService.autoConnect();
+      if (reconnected) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        final retrySuccess = await _arduinoService.sendCommand(arduinoCmd);
+        
+        if (retrySuccess) {
+          print('[TRACKER_PROVIDER] >>> SUCESSO NA TENTATIVA 2 <<<');
+          _addLog(LogType.success, 'Arduino: $arduinoCmd - OK (tentativa 2)');
+        } else {
+          print('[TRACKER_PROVIDER] >>> FALHA NA TENTATIVA 2 <<<');
+          _addLog(LogType.error, 'Falha na tentativa 2: $arduinoCmd');
+        }
+      }
     }
   }
 

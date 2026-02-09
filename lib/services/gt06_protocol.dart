@@ -352,12 +352,12 @@ class GT06Protocol {
     }
   }
 
-  /// Parse de comando do servidor (0x80)
+  /// Parse de comando do servidor (0x80) - ESTILO PYTHON
   /// 
-  /// O Traccar envia comandos no formato de texto dentro do payload.
-  /// Comandos comuns:
-  /// - "Relay,1" → Parar motor (ENGINE_STOP)
-  /// - "Relay,0" → Liberar motor (ENGINE_RESUME)
+  /// Implementação igual ao exemplo Python:
+  /// 1. Remove bytes nulos (\x00)
+  /// 2. Decodifica como ASCII
+  /// 3. Procura por "Relay" no texto
   GT06Command? parseCommand(GT06ServerPacket packet) {
     if (packet.protocolNumber != PROTOCOL_COMMAND) {
       return null;
@@ -366,41 +366,53 @@ class GT06Protocol {
     try {
       print('[GT06_PROTOCOL] Parse comando - content: ${bytesToHex(packet.content)}');
       
-      // Limpa bytes nulos do payload
-      final cleanBytes = packet.content.where((b) => b != 0).toList();
+      // Remove bytes nulos igual ao Python
+      final cleanBytes = <int>[];
+      for (int byte in packet.content) {
+        if (byte != 0) cleanBytes.add(byte);
+      }
       
       if (cleanBytes.isEmpty) {
         print('[GT06_PROTOCOL] Payload vazio após limpeza');
         return null;
       }
       
-      // Decodifica como ASCII
-      String text = ascii.decode(Uint8List.fromList(cleanBytes), allowInvalid: true);
+      // Decodifica como ASCII, ignorando erros (igual ao Python com errors="ignore")
+      String text = String.fromCharCodes(cleanBytes);
       text = text.trim();
       
       print('[GT06_PROTOCOL] Texto do comando: "$text"');
       
-      // Detecta tipo de comando
-      String commandType;
-      String rawCommand = text;
-      
-      if (text.contains('Relay,1') || text.toUpperCase().contains('STOP')) {
-        commandType = 'ENGINE_STOP';
-      } else if (text.contains('Relay,0') || text.toUpperCase().contains('RESUME')) {
-        commandType = 'ENGINE_RESUME';
-      } else if (text.toUpperCase().contains('WHERE') || text.toUpperCase().contains('POSITION')) {
-        commandType = 'POSITION';
-      } else if (text.toUpperCase().contains('STATUS')) {
-        commandType = 'STATUS';
-      } else {
-        commandType = 'UNKNOWN';
+      // Verifica se contém "Relay" igual ao Python
+      if (text.contains("Relay")) {
+        print('[GT06_PROTOCOL] Comando Relay detectado');
+        
+        String commandType;
+        String rawCommand = text;
+        
+        if (text.contains("Relay,1")) {
+          commandType = 'ENGINE_STOP';
+          print('[GT06_PROTOCOL] ENGINE_STOP');
+        } else if (text.contains("Relay,0")) {
+          commandType = 'ENGINE_RESUME';
+          print('[GT06_PROTOCOL] ENGINE_RESUME');
+        } else {
+          commandType = 'UNKNOWN';
+          print('[GT06_PROTOCOL] Relay desconhecido');
+        }
+        
+        return GT06Command(
+          rawCommand: rawCommand,
+          commandType: commandType,
+          serialNumber: packet.serialNumber,
+        );
       }
       
-      print('[GT06_PROTOCOL] Tipo detectado: $commandType');
-      
+      // Se não for Relay, retorna o texto original
+      print('[GT06_PROTOCOL] Não é comando Relay');
       return GT06Command(
-        rawCommand: rawCommand,
-        commandType: commandType,
+        rawCommand: text,
+        commandType: 'TEXT',
         serialNumber: packet.serialNumber,
       );
       
@@ -535,20 +547,14 @@ class GT06Command {
     required this.serialNumber,
   });
 
-  /// Retorna o comando para enviar ao Arduino
+  /// Retorna o comando para enviar ao Arduino (igual ao Python)
   String get arduinoCommand {
-    switch (commandType) {
-      case 'ENGINE_STOP':
-        return 'ENGINE_STOP';
-      case 'ENGINE_RESUME':
-        return 'ENGINE_RESUME';
-      case 'POSITION':
-        return 'GET_POSITION';
-      case 'STATUS':
-        return 'GET_STATUS';
-      default:
-        return 'UNKNOWN:$rawCommand';
+    if (rawCommand.contains("Relay,1")) {
+      return 'ENGINE_STOP';
+    } else if (rawCommand.contains("Relay,0")) {
+      return 'ENGINE_RESUME';
     }
+    return rawCommand; // Para outros comandos, envia o texto original
   }
 
   @override

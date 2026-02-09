@@ -208,25 +208,43 @@ class GT06Client {
     await _sendPacket(packet, 'ALARM');
   }
 
-  /// Envia ACK de comando (0x80)
+  /// Envia ACK de comando (0x80) - IGUAL AO PYTHON
   Future<void> sendCommandAck(int serialNumber) async {
     if (!_isConnected) return;
     
-    // Para ACK de comando, enviamos pacote vazio com o mesmo serial
-    final builder = BytesBuilder();
-    builder.add(GT06Protocol.START_BYTES);
-    builder.addByte(0x05); // Length: protocol(1) + serial(2) + crc(2) = 5? Não, é 1+2=3, +2 crc no final
-    // Na verdade o GT06 usa: length = protocol + content + serial
-    // Para ACK: protocol(1) + content(0) + serial(2) = 3
-    builder.addByte(0x03); // Length
-    builder.addByte(GT06Protocol.PROTOCOL_COMMAND); // 0x80
-    builder.add(_intToBytes(serialNumber, 2));
+    print('[GT06_CLIENT] Enviando ACK do comando (serial: $serialNumber)');
     
-    final checksum = _calculateChecksum(builder.toBytes().sublist(2));
+    // Constrói pacote ACK igual ao Python: build_packet(0x80, b"", serial)
+    final builder = BytesBuilder();
+    
+    // Start bytes
+    builder.add(GT06Protocol.START_BYTES);
+    
+    // Content length = protocol(1) + payload(0) + serial(2) = 3
+    builder.addByte(0x03);
+    
+    // Protocol number (0x80 para ACK de comando)
+    builder.addByte(GT06Protocol.PROTOCOL_COMMAND);
+    
+    // Payload vazio
+    // Serial number (2 bytes, big-endian)
+    builder.addByte((serialNumber >> 8) & 0xFF);
+    builder.addByte(serialNumber & 0xFF);
+    
+    // Checksum
+    final contentForChecksum = builder.toBytes().sublist(2);
+    int checksum = 0;
+    for (int byte in contentForChecksum) {
+      checksum ^= byte;
+    }
     builder.addByte(checksum);
+    
+    // Stop bytes
     builder.add(GT06Protocol.STOP_BYTES);
     
     final packet = Uint8List.fromList(builder.toBytes());
+    
+    print('[GT06_CLIENT] ACK hex: ${GT06Protocol.bytesToHex(packet)}');
     await _sendPacket(packet, 'CMD_ACK');
   }
 
@@ -400,7 +418,7 @@ class GT06Client {
     _notifyEvent(ClientEventType.locationAck, 'Posição confirmada');
   }
 
-  /// Manipula comando do servidor (0x80)
+  /// Manipula comando do servidor (0x80) - IGUAL AO PYTHON
   void _handleCommand(GT06ServerPacket packet) {
     print('[GT06_CLIENT] ==========================================');
     print('[GT06_CLIENT] >>> PROCESSANDO COMANDO (0x80) <<<');
@@ -429,13 +447,14 @@ class GT06Client {
       _commandController.add(command);
       print('[GT06_CLIENT] Comando adicionado ao stream');
       
-      // Envia ACK para o Traccar
+      // Envia ACK para o Traccar (IMEDIATAMENTE, igual ao Python)
       print('[GT06_CLIENT] Enviando ACK do comando...');
       sendCommandAck(packet.serialNumber);
       
     } else {
       print('[GT06_CLIENT] Não foi possível parsear o comando');
-      // Mesmo assim envia ACK
+      // Mesmo assim envia ACK (igual ao Python)
+      print('[GT06_CLIENT] Enviando ACK mesmo sem parse');
       sendCommandAck(packet.serialNumber);
     }
     
@@ -543,23 +562,6 @@ class GT06Client {
     _eventController.close();
     _commandController.close();
     _rawDataController.close();
-  }
-  
-  /// Helpers
-  Uint8List _intToBytes(int value, int length) {
-    final bytes = <int>[];
-    for (int i = length - 1; i >= 0; i--) {
-      bytes.add((value >> (i * 8)) & 0xFF);
-    }
-    return Uint8List.fromList(bytes);
-  }
-  
-  int _calculateChecksum(Uint8List data) {
-    int checksum = 0;
-    for (int byte in data) {
-      checksum ^= byte;
-    }
-    return checksum;
   }
 }
 

@@ -380,8 +380,8 @@ class ArduinoService {
   /// Converte comando Traccar para comando Arduino
   /// 
   /// Comandos Traccar comuns:
-  /// - "Relay,1" → ENGINE_STOP (bloqueia motor)
-  /// - "Relay,0" → ENGINE_RESUME (libera motor)
+  /// - "Relay,1#" → ENGINE_STOP (bloqueia motor)
+  /// - "Relay,0#" → ENGINE_RESUME (libera motor)
   /// - "where", "position", "gps" → GET_POSITION
   /// - "status" → GET_STATUS
   String convertTraccarCommand(String traccarCommand) {
@@ -390,7 +390,7 @@ class ArduinoService {
     final upper = traccarCommand.toUpperCase().trim();
     
     // Comandos de bloqueio/desbloqueio de motor
-    if (upper.contains('RELAY,1') || 
+    if (upper.contains('Relay,1#') || 
         upper.contains('STOP') || 
         upper.contains('CUT') || 
         upper.contains('BLOQUEAR') ||
@@ -400,7 +400,7 @@ class ArduinoService {
       print('[ARDUINO_SERVICE] Convertido: ENGINE_STOP');
       return 'ENGINE_STOP';
     } 
-    else if (upper.contains('RELAY,0') || 
+    else if (upper.contains('Relay,0#') || 
              upper.contains('RESUME') || 
              upper.contains('RESTORE') || 
              upper.contains('DESBLOQUEAR') ||
