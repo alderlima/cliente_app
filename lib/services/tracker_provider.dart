@@ -1,3 +1,5 @@
+[file name]: tracker_provider.dart
+[file content begin]
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -376,6 +378,17 @@ class TrackerProvider extends ChangeNotifier {
     
     _addLog(LogType.command, 'Comando Traccar: $command');
     
+    // Se for um comando de confirmação de login (pode vir como resposta)
+    if (command.contains('login') || command.contains('ack')) {
+      print('[TRACKER_PROVIDER] Detecção de possível confirmação de login');
+      // Verifica se estamos no estado loggingIn e atualiza para online
+      if (_status == TrackerStatus.loggingIn) {
+        print('[TRACKER_PROVIDER] Atualizando estado de loggingIn para online via comando');
+        _updateStatus(TrackerStatus.online);
+        _startLocationTimer();
+      }
+    }
+    
     // Envia para Arduino se estiver conectado
     if (_arduinoService.isConnected) {
       final arduinoCmd = _arduinoService.convertTraccarCommand(command);
@@ -583,3 +596,4 @@ class TrackerProvider extends ChangeNotifier {
     super.dispose();
   }
 }
+[file content end]
