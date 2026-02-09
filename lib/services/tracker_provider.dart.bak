@@ -594,4 +594,3 @@ class TrackerProvider extends ChangeNotifier {
     super.dispose();
   }
 }
-[file content end]
