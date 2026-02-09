@@ -120,11 +120,6 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   TrackerProvider() {
-    // Configura callbacks do cliente GT06
-    _gt06Client.onPacket = _handleGt06Packet;
-    _gt06Client.onConnected = _handleSocketConnected;
-    _gt06Client.onDisconnected = _handleSocketDisconnected;
-    
     print('[TRACKER_PROVIDER] Inicializando...');
     _init();
   }
@@ -174,50 +169,12 @@ class TrackerProvider extends ChangeNotifier {
   }
 
   /// ==========================================================================
-  /// HANDLE GT06 PACKETS
+  /// HANDLE PACKET DIRECTLY (se necessário)
   /// ==========================================================================
 
-  void _handleGt06Packet(Uint8List data) {
-    final protocol = data[3];
-    
-    // LOGIN_ACK - Login aceito pelo servidor
-    if (protocol == 0x01) {
-      print('[TRACKER_PROVIDER] >>> LOGIN_ACK RECEBIDO - LOGIN ACEITO! <<<');
-      _updateStatus(TrackerStatus.online);
-      _startLocationTimer();
-      _addLog(LogType.success, 'Login aceito pelo servidor');
-      return;
-    }
-    
-    // HEARTBEAT - Manutenção de conexão
-    if (protocol == 0x13) {
-      _stats.heartbeatsSent++;
-      notifyListeners();
-      _addLog(LogType.info, 'Heartbeat recebido');
-      return;
-    }
-    
-    // COMANDO DO TRACCAR (0x80) - Já tratado pelo commandStream
-    if (protocol == 0x80) {
-      print('[TRACKER_PROVIDER] Pacote de comando recebido (já tratado)');
-      return;
-    }
-  }
-
-  /// ==========================================================================
-  /// HANDLE SOCKET EVENTS (Opcional - para conexão/desconexão do socket)
-  /// ==========================================================================
-
-  void _handleSocketConnected() {
-    print('[TRACKER_PROVIDER] Socket conectado');
-    _updateStatus(TrackerStatus.connected);
-  }
-
-  void _handleSocketDisconnected() {
-    print('[TRACKER_PROVIDER] Socket desconectado');
-    _updateStatus(TrackerStatus.disconnected);
-    _stopLocationTimer();
-  }
+  // NOTA: Este método não é mais necessário se os eventos já são tratados pelo eventStream
+  // Se ainda precisar processar pacotes diretamente, verifique se GT06Client tem um método para isso
+  // Por enquanto, comentamos esta seção pois os eventos já são tratados no _onClientEvent
 
   /// ==========================================================================
   /// CONFIGURAÇÃO

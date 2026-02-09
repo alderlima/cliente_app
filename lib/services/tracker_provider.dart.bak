@@ -120,9 +120,6 @@ class TrackerProvider extends ChangeNotifier {
   /// ==========================================================================
 
   TrackerProvider() {
-    gt06Client.onPacket = _handleGt06Packet; // <-- se não existir, crie
-    gt06Client.onConnected = _handleSocketConnected; // opcional
-    gt06Client.onDisconnected = _handleSocketDisconnected;
     print('[TRACKER_PROVIDER] Inicializando...');
     _init();
   }
@@ -170,33 +167,6 @@ class TrackerProvider extends ChangeNotifier {
     // Estado do Arduino
     _arduinoStateSub = _arduinoService.stateStream.listen(_onArduinoState);
   }
-
-    void _handleGt06Packet(Uint8List data) {
-      final protocol = data[3];
-    
-      // LOGIN_ACK
-      if (protocol == 0x01) {
-        isConnecting = false;
-        isOnline = true;
-        notifyListeners();
-        return;
-      }
-    
-      // HEARTBEAT
-      if (protocol == 0x13) {
-        heartbeats++;
-        notifyListeners();
-        return;
-      }
-    
-      // COMANDO DO TRACCAR
-      if (protocol == 0x80) {
-        final cmd = _parseCommand(data);
-        _sendCommandToArduino(cmd);
-        notifyListeners();
-        return;
-      }
-    }
 
   /// ==========================================================================
   /// CONFIGURAÇÃO
